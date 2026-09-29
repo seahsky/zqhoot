@@ -25,7 +25,7 @@ Updated as tasks complete. Each task has a spec with acceptance criteria in `doc
 | W2-ratelimit      | [W2-ratelimit](tasks/W2-ratelimit.md)           | W2-service                       | merged  |
 | W2-server-node    | [W2-server-node](tasks/W2-server-node.md)       | W2-service                       | merged  |
 | W2-server-lambda  | [W2-server-lambda](tasks/W2-server-lambda.md)   | W2-service                       | merged  |
-| W2-vm-deploy      | [W2-vm-deploy](tasks/W2-vm-deploy.md)           | W2-server-node, W1-web-b         | running |
+| W2-vm-deploy      | [W2-vm-deploy](tasks/W2-vm-deploy.md)           | W2-server-node, W1-web-b         | merged  |
 | G1-engine-fixes   | [G1-engine-fixes](tasks/G1-engine-fixes.md)     | wave 1 gate                      | merged  |
 | G2-web-fixes      | [G2-web-fixes](tasks/G2-web-fixes.md)           | W1-web-b, G1-engine-fixes        | pending |
 | G3-aws-client-ip  | [G3-aws-client-ip](tasks/G3-aws-client-ip.md)   | wave 1 gate                      | merged  |
