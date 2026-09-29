@@ -8,9 +8,9 @@ Updated as tasks complete. Each task has a spec with acceptance criteria in `doc
 | ---------------------- | ----------- | ----------------------------------------------------------------------------------------- |
 | 1. Research            | done        | `docs/research/*.md`, `docs/research/SUMMARY.md`                                          |
 | 2. Architecture        | done        | `docs/ARCHITECTURE.md`, `docs/adr/*`, `packages/protocol`, domain model, `Store` contract |
-| 3-4. MVP build, wave 1 | done        | engine, store, infra, web foundation merged; web-b running                                |
-| 3-4. MVP build, wave 2 | in progress | service, servers, host/presenter/editor UI, VM deploy                                     |
-| 5. Verification        | pending     | E2E, load test, visual check, independent audit, README                                   |
+| 3-4. MVP build, wave 1 | done        | engine, store, infra, web foundation, player screens                                      |
+| 3-4. MVP build, wave 2 | done        | service, servers, host/presenter/editor UI, VM deploy                                     |
+| 5. Verification        | in progress | E2E and load test done ([results](../load/RESULTS.md)); visual check and final audit next |
 
 ## Tasks
 
@@ -31,9 +31,9 @@ Updated as tasks complete. Each task has a spec with acceptance criteria in `doc
 | G3-aws-client-ip  | [G3-aws-client-ip](tasks/G3-aws-client-ip.md)   | wave 1 gate                      | merged  |
 | G4-app-cors       | [G4-app-cors](tasks/G4-app-cors.md)             | W2-server-lambda, G3             | merged  |
 | G5-nickname-bytes | [G5-nickname-bytes](tasks/G5-nickname-bytes.md) | G1-engine-fixes                  | merged  |
-| P5-e2e            | [P5-e2e](tasks/P5-e2e.md)                       | W2-server-node, W1-web-b         | running |
-| P5-load           | [P5-load](tasks/P5-load.md)                     | W2-server-node, W2-server-lambda | running |
-| P5-audit          | independent Opus audit of the whole repo        | all                              | pending |
+| P5-e2e            | [P5-e2e](tasks/P5-e2e.md)                       | W2-server-node, W1-web-b         | merged  |
+| P5-load           | [P5-load](tasks/P5-load.md)                     | W2-server-node, W2-server-lambda | merged  |
+| P5-audit          | independent Opus audit of the whole repo        | all                              | running |
 
 ```
 protocol ─┬─ W1-engine ─┬─ W2-service ─┬─ W2-server-node ──┬─ W2-vm-deploy
