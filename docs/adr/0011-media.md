@@ -10,7 +10,12 @@ Port:
 interface MediaStorage {
   createUpload(hostId: string, req: UploadRequest): Promise<UploadGrant>;
   /** VM only: store bytes for a key previously granted to this host. */
-  put?(hostId: string, key: string, contentType: string, body: ReadableStream | Buffer): Promise<void>;
+  put?(
+    hostId: string,
+    key: string,
+    contentType: string,
+    body: ReadableStream | Buffer,
+  ): Promise<void>;
 }
 ```
 

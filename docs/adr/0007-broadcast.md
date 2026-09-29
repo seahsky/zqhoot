@@ -4,7 +4,7 @@ Status: accepted (2026-09-29)
 
 ## Context
 
-API Gateway's management API has only per-connection operations: `PostToConnection`, `GetConnection` and `DeleteConnection` ([aws-realtime](../research/aws-realtime.md) A3). Errors are 410 `GoneException` (connection gone), 429 `LimitExceededException` (rate, *or the client's buffer is full*) and 413. No numeric `PostToConnection` rate or latency is documented. Calls count against the account's shared 10,000 rps throttle. SDK v3's Node handler defaults to `keepAlive: true, maxSockets: 50`.
+API Gateway's management API has only per-connection operations: `PostToConnection`, `GetConnection` and `DeleteConnection` ([aws-realtime](../research/aws-realtime.md) A3). Errors are 410 `GoneException` (connection gone), 429 `LimitExceededException` (rate, _or the client's buffer is full_) and 413. No numeric `PostToConnection` rate or latency is documented. Calls count against the account's shared 10,000 rps throttle. SDK v3's Node handler defaults to `keepAlive: true, maxSockets: 50`.
 
 ## Decision
 

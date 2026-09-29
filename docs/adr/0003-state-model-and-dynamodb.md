@@ -20,34 +20,34 @@ Domain records are defined in `packages/engine/src/model.ts`: `SessionMeta`, `Qu
 
 One on-demand table. Keys: `pk` (S), `sk` (S). TTL attribute: `expiresAt` (epoch seconds). One GSI.
 
-| Entity | pk | sk | Other key attributes | TTL |
-|---|---|---|---|---|
-| Quiz | `HOST#{hostId}` | `QUIZ#{quizId}` | | none |
-| Session meta | `SESS#{sid}` | `META` | `gsi1pk = HOST#{hostId}`, `gsi1sk = SESS#{createdAt padded}#{sid}` | 30 d |
-| Quiz snapshot | `SESS#{sid}` | `SNAP` | | 30 d |
-| PIN claim | `PIN#{pin}` | `PIN` | | session expiry, released at end |
-| Player | `SESS#{sid}` | `PLAYER#{pid}` | | 30 d |
-| Nickname claim | `SESS#{sid}` | `NICK#{nicknameKey}` | | 30 d |
-| Connection (by id) | `CONN#{connId}` | `CONN` | | 3 h |
-| Connection (by session) | `SESS#{sid}` | `CONN#{connId}` | | 3 h |
-| Response | `RESP#{sid}#{qIndex}#{shard}` | `P#{pid}#{slot}` | shard = FNV-1a(pid) mod 4 | 30 d |
-| Question result | `SESS#{sid}` | `RESULT#{qIndex padded 3}` | | 30 d |
-| Scoreboard | `SESS#{sid}` | `SCORES` | | 30 d |
-| Rate-limit window | `RL#{key}` | `W#{windowStart}` | | window end + 60 s |
+| Entity                  | pk                            | sk                         | Other key attributes                                               | TTL                             |
+| ----------------------- | ----------------------------- | -------------------------- | ------------------------------------------------------------------ | ------------------------------- |
+| Quiz                    | `HOST#{hostId}`               | `QUIZ#{quizId}`            |                                                                    | none                            |
+| Session meta            | `SESS#{sid}`                  | `META`                     | `gsi1pk = HOST#{hostId}`, `gsi1sk = SESS#{createdAt padded}#{sid}` | 30 d                            |
+| Quiz snapshot           | `SESS#{sid}`                  | `SNAP`                     |                                                                    | 30 d                            |
+| PIN claim               | `PIN#{pin}`                   | `PIN`                      |                                                                    | session expiry, released at end |
+| Player                  | `SESS#{sid}`                  | `PLAYER#{pid}`             |                                                                    | 30 d                            |
+| Nickname claim          | `SESS#{sid}`                  | `NICK#{nicknameKey}`       |                                                                    | 30 d                            |
+| Connection (by id)      | `CONN#{connId}`               | `CONN`                     |                                                                    | 3 h                             |
+| Connection (by session) | `SESS#{sid}`                  | `CONN#{connId}`            |                                                                    | 3 h                             |
+| Response                | `RESP#{sid}#{qIndex}#{shard}` | `P#{pid}#{slot}`           | shard = FNV-1a(pid) mod 4                                          | 30 d                            |
+| Question result         | `SESS#{sid}`                  | `RESULT#{qIndex padded 3}` |                                                                    | 30 d                            |
+| Scoreboard              | `SESS#{sid}`                  | `SCORES`                   |                                                                    | 30 d                            |
+| Rate-limit window       | `RL#{key}`                    | `W#{windowStart}`          |                                                                    | window end + 60 s               |
 
 GSI `gsi1` (`gsi1pk`, `gsi1sk`), projection ALL, sparse (only META items carry it). It serves "list my sessions". No LSI, so item collections have no 10 GB limit and DynamoDB can isolate hot items ([aws-realtime](../research/aws-realtime.md) C1).
 
 ### Access patterns
 
-| Pattern | Operation |
-|---|---|
-| Resolve PIN | GetItem `PIN#{pin}` |
-| Join | TransactWriteItems: Put player + Put nickname claim, both `attribute_not_exists(pk)` |
-| Count players | Query `SESS#{sid}` begins_with `PLAYER#`, `Select: COUNT` |
-| Answer | GetItem `CONN#…`; GetItem META (strongly consistent); PutItem response `attribute_not_exists(pk)` with `ReturnValuesOnConditionCheckFailure: ALL_OLD` |
-| Broadcast | Query `SESS#{sid}` begins_with `CONN#` |
-| Reveal | 4 × Query `RESP#{sid}#{i}#{0..3}` (consistent) + Query players + GetItem SCORES, then Put RESULT + conditional Put SCORES + conditional Put META |
-| Host session list | Query `gsi1` `HOST#{hostId}`, newest first |
+| Pattern           | Operation                                                                                                                                             |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resolve PIN       | GetItem `PIN#{pin}`                                                                                                                                   |
+| Join              | TransactWriteItems: Put player + Put nickname claim, both `attribute_not_exists(pk)`                                                                  |
+| Count players     | Query `SESS#{sid}` begins_with `PLAYER#`, `Select: COUNT`                                                                                             |
+| Answer            | GetItem `CONN#…`; GetItem META (strongly consistent); PutItem response `attribute_not_exists(pk)` with `ReturnValuesOnConditionCheckFailure: ALL_OLD` |
+| Broadcast         | Query `SESS#{sid}` begins_with `CONN#`                                                                                                                |
+| Reveal            | 4 × Query `RESP#{sid}#{i}#{0..3}` (consistent) + Query players + GetItem SCORES, then Put RESULT + conditional Put SCORES + conditional Put META      |
+| Host session list | Query `gsi1` `HOST#{hostId}`, newest first                                                                                                            |
 
 ### Expiry
 

@@ -6,14 +6,14 @@ Status: accepted (2026-09-29)
 
 The AWS target must scale to zero, so no always-on compute or connection brokers. Candidates researched ([aws-realtime.md](../research/aws-realtime.md) section D):
 
-| | API Gateway WebSocket | AppSync Events | IoT Core MQTT/WS |
-|---|---|---|---|
-| Broadcast | No; one `PostToConnection` per connection | Native | Native |
-| Price per delivered message | $1.00/M (32 KB units) | $1.00/M ops (5 KB units) | $1.00/M |
-| Connect burst | 500/s, burst 500 (burst not adjustable) | 2,000/s | 3,000/s |
-| Connection lifetime | 2 h max, 10 min idle | Not verified | 24 h |
-| Client | Plain WebSocket + JSON | Custom subprotocol, base64 auth header | MQTT client |
-| Per-player private message | `PostToConnection` | Per-player channel + channel auth | Per-player topic + IoT policy |
+|                             | API Gateway WebSocket                     | AppSync Events                         | IoT Core MQTT/WS              |
+| --------------------------- | ----------------------------------------- | -------------------------------------- | ----------------------------- |
+| Broadcast                   | No; one `PostToConnection` per connection | Native                                 | Native                        |
+| Price per delivered message | $1.00/M (32 KB units)                     | $1.00/M ops (5 KB units)               | $1.00/M                       |
+| Connect burst               | 500/s, burst 500 (burst not adjustable)   | 2,000/s                                | 3,000/s                       |
+| Connection lifetime         | 2 h max, 10 min idle                      | Not verified                           | 24 h                          |
+| Client                      | Plain WebSocket + JSON                    | Custom subprotocol, base64 auth header | MQTT client                   |
+| Per-player private message  | `PostToConnection`                        | Per-player channel + channel auth      | Per-player topic + IoT policy |
 
 A 400-player session costs within about $0.01-0.02 of each other on the first two ([aws-realtime](../research/aws-realtime.md) E3).
 
@@ -25,7 +25,9 @@ A 400-player session costs within about $0.01-0.02 of each other on the first tw
   ```ts
   interface Transport {
     /** Stamps `ts` per recipient, sends, reports which connections are gone. */
-    send(batch: Array<{ connectionId: string; message: OutboundMessage }>): Promise<{ gone: string[] }>;
+    send(
+      batch: Array<{ connectionId: string; message: OutboundMessage }>,
+    ): Promise<{ gone: string[] }>;
     close(connectionId: string, code?: number): Promise<void>;
   }
   ```

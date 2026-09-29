@@ -9,26 +9,27 @@ Status: accepted (2026-09-29). Source: [responsive-display.md](../research/respo
 - **Name:** zqhoot (lower-case wordmark set in the UI font). No mascot, no exclamation mark.
 - **Answer identity:** letter + shape + position + colour, never colour alone (WCAG 1.4.1).
 
-| Slot | Letter | Glyph | Fill |
-|---|---|---|---|
-| 1 | A | hexagon | #0072B2 (blue) |
-| 2 | B | plus | #D55E00 (vermillion) |
-| 3 | C | five-point star | #F0E442 (yellow) |
-| 4 | D | dome (half-disc, flat side down) | #009E73 (bluish green) |
+| Slot | Letter | Glyph                            | Fill                   |
+| ---- | ------ | -------------------------------- | ---------------------- |
+| 1    | A      | hexagon                          | #0072B2 (blue)         |
+| 2    | B      | plus                             | #D55E00 (vermillion)   |
+| 3    | C      | five-point star                  | #F0E442 (yellow)       |
+| 4    | D      | dome (half-disc, flat side down) | #009E73 (bluish green) |
 
 | 5 (polls only) | E | pentagon | #56B4E9 (sky blue) |
 | 6 (polls only) | F | X-cross | #CC79A7 (reddish purple) |
 
-  True/false uses slots A and B (hexagon, plus), labelled "True" and "False". There are no check or cross glyphs, so shape never implies correctness.
+True/false uses slots A and B (hexagon, plus), labelled "True" and "False". There are no check or cross glyphs, so shape never implies correctness.
+
 - Fills only colour glyphs and chart bars, always with a 3-4 px ink outline. Answer text is ink on a neutral card: vermillion and green differ by 1.13:1 in luminance, and yellow is 1.32:1 on white.
 - **Colour tokens:**
 
-| Token | Light stage (default) | Dark stage |
-|---|---|---|
-| `--bg` | #FFFFFF | #0B1020 |
-| `--surface` | #F1F4F9 | #141B30 |
-| `--ink` | #0B1020 (18.93:1) | #F4F6FB (17.51:1) |
-| `--ink-2` | #3A4258 (10.00:1) | #C3CAD9 (11.51:1) |
+| Token       | Light stage (default) | Dark stage        |
+| ----------- | --------------------- | ----------------- |
+| `--bg`      | #FFFFFF               | #0B1020           |
+| `--surface` | #F1F4F9               | #141B30           |
+| `--ink`     | #0B1020 (18.93:1)     | #F4F6FB (17.51:1) |
+| `--ink-2`   | #3A4258 (10.00:1)     | #C3CAD9 (11.51:1) |
 
 - No separate brand accent colour: chrome uses ink, and colour appears only in answer glyphs and charts. We avoid saturated full-bleed backgrounds, which are central to Kahoot's look (purple) and Mentimeter's infographic palette.
 - **Type:** the system UI font stack (no web-font dependency, no licensing), with tabular numerals for timers and scores. Weights 500-800, never below 400.

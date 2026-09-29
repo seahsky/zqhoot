@@ -18,27 +18,27 @@ Internal packages export TypeScript source (`"exports": {".": "./src/index.ts"}`
 
 ### Pinned toolchain (verified with `npm view` / binaries on 2026-09-29)
 
-| Tool | Version | Note |
-|---|---|---|
-| Node.js | 22 (dev), `nodejs24.x` on Lambda, `node:24-alpine` on the VM | nodejs22.x deprecates 2027-04-30, nodejs24.x 2028-04-30 (secondary source, research SUMMARY) |
-| pnpm | 10.33.0 | `packageManager` field |
-| TypeScript | 7.0.2 | Native compiler; verified to typecheck the base config |
-| zod | 4.6.5 | Refined objects inside discriminated unions verified to work |
-| Vitest | 5.0.2 | |
-| Vite | 8.3.1, `@vitejs/plugin-react` 6.1.1 | |
-| React | 19.3.0 | |
-| Playwright | `@playwright/test` 1.56.1 | Matches the preinstalled Chromium build 1194; newer versions would need a browser download, which this environment's network blocks |
-| esbuild | 0.28.2 | Lambda bundles |
-| ws | 8.22.0 | Node WebSocket server |
-| hono | 4.13.10, `@hono/node-server` 2.1.1 | |
-| AWS SDK v3 | 3.1142.0 | client-dynamodb, lib-dynamodb, client-apigatewaymanagementapi, client-s3, s3-presigned-post, client-lambda |
-| aws-jwt-verify | 5.2.1 | Cognito JWT verification |
-| jose | 6.2.12 | HS256 JWTs on the VM |
-| obscenity | 0.4.6 | Nickname and free-text filter |
-| nanoid | 6.0.1 | IDs |
-| qrcode | 1.5.4 | Join QR on the presenter |
-| k6 | 1.8.1 | Built from source; see ADR-0014 |
-| Terraform | 1.16.4, AWS provider 6.66.0 | tflint 0.64.0 with AWS ruleset 0.49.0 |
+| Tool           | Version                                                      | Note                                                                                                                                |
+| -------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Node.js        | 22 (dev), `nodejs24.x` on Lambda, `node:24-alpine` on the VM | nodejs22.x deprecates 2027-04-30, nodejs24.x 2028-04-30 (secondary source, research SUMMARY)                                        |
+| pnpm           | 10.33.0                                                      | `packageManager` field                                                                                                              |
+| TypeScript     | 7.0.2                                                        | Native compiler; verified to typecheck the base config                                                                              |
+| zod            | 4.6.5                                                        | Refined objects inside discriminated unions verified to work                                                                        |
+| Vitest         | 5.0.2                                                        |                                                                                                                                     |
+| Vite           | 8.3.1, `@vitejs/plugin-react` 6.1.1                          |                                                                                                                                     |
+| React          | 19.3.0                                                       |                                                                                                                                     |
+| Playwright     | `@playwright/test` 1.56.1                                    | Matches the preinstalled Chromium build 1194; newer versions would need a browser download, which this environment's network blocks |
+| esbuild        | 0.28.2                                                       | Lambda bundles                                                                                                                      |
+| ws             | 8.22.0                                                       | Node WebSocket server                                                                                                               |
+| hono           | 4.13.10, `@hono/node-server` 2.1.1                           |                                                                                                                                     |
+| AWS SDK v3     | 3.1142.0                                                     | client-dynamodb, lib-dynamodb, client-apigatewaymanagementapi, client-s3, s3-presigned-post, client-lambda                          |
+| aws-jwt-verify | 5.2.1                                                        | Cognito JWT verification                                                                                                            |
+| jose           | 6.2.12                                                       | HS256 JWTs on the VM                                                                                                                |
+| obscenity      | 0.4.6                                                        | Nickname and free-text filter                                                                                                       |
+| nanoid         | 6.0.1                                                        | IDs                                                                                                                                 |
+| qrcode         | 1.5.4                                                        | Join QR on the presenter                                                                                                            |
+| k6             | 1.8.1                                                        | Built from source; see ADR-0014                                                                                                     |
+| Terraform      | 1.16.4, AWS provider 6.66.0                                  | tflint 0.64.0 with AWS ruleset 0.49.0                                                                                               |
 
 ## Consequences
 
