@@ -111,12 +111,14 @@ docs                 research, architecture, ADRs, task specs, review records
 pnpm typecheck && pnpm test                       # every package (store/service/lambda tests need DynamoDB Local on :8000)
 pnpm --filter @zqhoot/web test:e2e                # gallery matrix: every screen x 6 viewports, axe, overflow, screenshots
 pnpm --filter @zqhoot/web test:e2e:live           # full game in real browsers against the Node server
+ZQ_E2E_TARGET=lambda-emulator pnpm --filter @zqhoot/web test:e2e:live   # the same against the Lambda handlers
 bash infra/terraform/validate.sh                  # fmt, validate, mock-provider tests, tflint
 deploy/vm/smoke-test.sh                           # Docker image + Caddy + API/WebSocket end to end
 load/run-local.sh node                            # 400-player k6 load test against the Node server
+load/run-local.sh lambda-emulator                 # the same against the Lambda handlers
 ```
 
-Load-test results are in [load/RESULTS.md](load/RESULTS.md).
+Load-test results are in [load/RESULTS.md](load/RESULTS.md). The Lambda-emulator runs need DynamoDB Local on :8000 ([packages/store/README.md](packages/store/README.md)). The review records are in [docs/reviews/](docs/reviews/).
 
 ## Documentation
 

@@ -75,4 +75,11 @@ FA numbers are the order the workflow returned them in; the task specs quote eac
 
 - Fixed by the lead in `fd18c59`: FA-00/07, FA-01/12, FA-02, FA-13, FA-14, FA-15.
 - Fixed by [F1](../tasks/F1-realtime-audit-fixes.md) in `1d25268`: FA-03, FA-04, FA-05/08, FA-06, FA-09, FA-10, FA-11. Its reviewer raised one more case: a host who presses Next at "Time's up" could still cut the grace window. [F3](../tasks/F3-grace-followups.md) fixed that in `146ccd9`, and the ADRs were amended in `560e17a` and `aa09780`.
-- FA-16 to FA-22: [F2](../tasks/F2-web-audit-fixes.md).
+- Fixed by [F2](../tasks/F2-web-audit-fixes.md) in `62669d8`: FA-16 to FA-22.
+
+All 20 distinct findings are fixed. Verified on the final code (`8d82c65`):
+
+- Every package's unit and contract tests pass.
+- The gallery suite passes 995 tests, with 8 intentional skips.
+- The live five-player game passes on the Node server and on the Lambda emulator.
+- The 400-player load test meets every gate on both targets ([load/RESULTS.md](../../load/RESULTS.md)).
