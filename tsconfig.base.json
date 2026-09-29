@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "lib": ["ES2023"],
+    "lib": [
+      "ES2023"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "moduleDetection": "force",
@@ -15,6 +17,7 @@
     "exactOptionalPropertyTypes": false,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": []
+    "types": [],
+    "allowImportingTsExtensions": true
   }
 }
