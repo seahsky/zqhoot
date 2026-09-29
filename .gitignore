@@ -1,0 +1,26 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl.bak
+crash.log
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+# Load test output
+load/results/raw/
+# Local data
+deploy/vm/data/

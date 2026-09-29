@@ -1,0 +1,22 @@
+{
+  "name": "zqhoot",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test": "pnpm -r --if-present run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "prettier": "3.9.9",
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
+  }
+}
