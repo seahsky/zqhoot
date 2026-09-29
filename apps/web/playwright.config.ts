@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 4173;
+// Parallel checkouts (worktrees) each set their own port. Reusing a server would then test
+// whichever checkout started it, so a set port refuses to reuse one and fails if it is taken.
+const PORT = Number(process.env.ZQ_E2E_PORT ?? 4173);
+const reuseServer = process.env.ZQ_E2E_PORT === undefined;
 
 // The descriptors for phones default to WebKit; only Chromium is installed here, so
 // every project pins the browser explicitly.
@@ -69,7 +72,7 @@ export default defineConfig({
     command: `pnpm exec vite build --outDir dist-e2e --emptyOutDir && pnpm exec vite preview --outDir dist-e2e --port ${PORT} --strictPort`,
     env: { VITE_ENABLE_GALLERY: '1' },
     url: `http://localhost:${PORT}`,
-    reuseExistingServer: true,
+    reuseExistingServer: reuseServer,
     timeout: 120_000,
   },
 });
