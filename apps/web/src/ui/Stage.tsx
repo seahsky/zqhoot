@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import styles from './Stage.module.css';
 
@@ -10,6 +10,17 @@ export interface StageProps {
   /** The text-size control: multiplies the essential text sizes (ADR-0016, WCAG F94). */
   textScale?: TextScale;
   children: ReactNode;
+}
+
+const StageUnit = createContext(0);
+
+/**
+ * How many CSS pixels one stage unit is right now, or 0 before the stage has been measured.
+ * Almost everything scales with the unit, but a few controls keep a px floor (a 24 px touch
+ * target), so the layout math needs to know where that floor takes over.
+ */
+export function useStageUnitPx(): number {
+  return useContext(StageUnit);
 }
 
 /**
@@ -26,14 +37,30 @@ export function Stage({ textScale = 1, children }: StageProps) {
     return () => root.classList.remove('stage-page');
   }, []);
 
+  const ref = useRef<HTMLDivElement>(null);
+  const [unitPx, setUnitPx] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setUnitPx(el.getBoundingClientRect().height / 100);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className={styles.frame}>
       <div
+        ref={ref}
         className={styles.stage}
         data-testid="stage"
         style={{ '--scale': textScale } as CSSProperties}
       >
-        <div className={styles.body}>{children}</div>
+        <StageUnit.Provider value={unitPx}>
+          <div className={styles.body}>{children}</div>
+        </StageUnit.Provider>
       </div>
     </div>
   );

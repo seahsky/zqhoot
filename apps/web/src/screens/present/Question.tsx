@@ -1,11 +1,12 @@
 import type { CSSProperties } from 'react';
-import { groupDigits } from '../../state/charts.ts';
 import type { ChartData, PresentQuestion, PresenterView } from '../../state/presenterView.ts';
 import { AnswerGlyph } from '../../ui/AnswerGlyph.tsx';
 import { SLOTS } from '../../ui/slots.ts';
 import { BarChart, CloudChart, RatingChart, StageCountdown, WallChart } from './charts.tsx';
-import { CONTENT_HEIGHT_U } from './layout.ts';
-import { GAP_U, fitQuestion } from './questionFit.ts';
+import { Topline } from './Topline.tsx';
+import { answeredText, eyebrowText } from './copy.ts';
+import { chartRoomU } from './layout.ts';
+import { fitQuestion } from './questionFit.ts';
 import type { OptionFit } from './questionFit.ts';
 import s from './Present.module.css';
 
@@ -35,12 +36,13 @@ function Options({ q, dim, fit }: { q: PresentQuestion; dim: boolean; fit: Optio
 
 function LiveChart({
   chart,
-  heightU,
+  headU,
   wallPage,
   onWallPage,
 }: {
   chart: ChartData;
-  heightU: number;
+  /** Height of the prompt block above the chart, in u. */
+  headU: number;
   wallPage: number;
   onWallPage: (page: number) => void;
 }) {
@@ -48,9 +50,9 @@ function LiveChart({
     case 'bars':
       return <BarChart chart={chart} />;
     case 'cloud':
-      return <CloudChart chart={chart} heightU={heightU} />;
+      return <CloudChart chart={chart} heightU={chartRoomU(headU)} />;
     case 'wall':
-      return <WallChart chart={chart} heightU={heightU} page={wallPage} onPage={onWallPage} />;
+      return <WallChart chart={chart} headU={headU} page={wallPage} onPage={onWallPage} />;
     case 'rating':
       return <RatingChart chart={chart} />;
   }
@@ -79,22 +81,11 @@ export function QuestionView({
   const { head, options, timerScale } = fitQuestion(q, scale, view.screen === 'get-ready');
   const live = view.screen === 'question' ? view.live : null;
   const showOptions = q.options.length > 0 && live === null;
-  const chartHeightU = CONTENT_HEIGHT_U - head.heightU - GAP_U - 6;
-  const count =
-    view.screen === 'get-ready'
-      ? null
-      : `${groupDigits(view.answered)} / ${groupDigits(view.totalPlayers)} answered`;
+  const count = view.screen === 'get-ready' ? null : answeredText(view.answered, view.totalPlayers);
 
   return (
     <section className={s.screen} aria-labelledby="prompt">
-      <p className={s.eyebrow}>
-        Question {q.index + 1} of {q.total}
-      </p>
-      {count && (
-        <p className={s.countTop} data-testid="answer-count">
-          {count}
-        </p>
-      )}
+      <Topline eyebrow={eyebrowText(q.index, q.total, false)} count={count} />
       <header className={s.head}>
         {view.screen === 'get-ready' && (
           <StageCountdown
@@ -122,12 +113,7 @@ export function QuestionView({
       )}
 
       {live && (
-        <LiveChart
-          chart={live}
-          heightU={chartHeightU}
-          wallPage={wallPage}
-          onWallPage={onWallPage}
-        />
+        <LiveChart chart={live} headU={head.heightU} wallPage={wallPage} onWallPage={onWallPage} />
       )}
       {showOptions && <Options q={q} dim={view.screen === 'get-ready'} fit={options} />}
     </section>

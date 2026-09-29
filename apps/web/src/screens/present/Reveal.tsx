@@ -1,8 +1,9 @@
 import type { CSSProperties } from 'react';
-import { groupDigits } from '../../state/charts.ts';
 import type { PresenterView } from '../../state/presenterView.ts';
 import { BarChart, CloudChart, RatingChart, WallChart } from './charts.tsx';
-import { CONTENT_HEIGHT_U, CONTENT_WIDTH_U, fitFontUnits, linesFor } from './layout.ts';
+import { Topline } from './Topline.tsx';
+import { answeredText, eyebrowText } from './copy.ts';
+import { CONTENT_WIDTH_U, chartRoomU, fitFontUnits, linesFor } from './layout.ts';
 import s from './Present.module.css';
 
 type RevealView = Extract<PresenterView, { screen: 'reveal' }>;
@@ -40,29 +41,24 @@ export function RevealScreen({
   const { q, chart } = view;
   const fs = promptUnits(q.prompt, scale);
   const headU = linesFor(q.prompt, fs, CONTENT_WIDTH_U) * fs * 1.15;
-  const chartHeightU = CONTENT_HEIGHT_U - headU - 4 - 7;
 
   return (
     <section className={s.screen} aria-labelledby="prompt">
-      <p className={s.eyebrow}>
-        Question {q.index + 1} of {q.total} · Results
-      </p>
+      <Topline
+        eyebrow={eyebrowText(q.index, q.total, true)}
+        count={answeredText(view.answered, view.totalPlayers)}
+      />
       <header>
         <h1 id="prompt" className={s.prompt} style={style({ '--fs': fs.toFixed(2) })}>
           {q.prompt}
         </h1>
       </header>
       {chart.kind === 'bars' && <BarChart chart={chart} />}
-      {chart.kind === 'cloud' && <CloudChart chart={chart} heightU={chartHeightU} />}
+      {chart.kind === 'cloud' && <CloudChart chart={chart} heightU={chartRoomU(headU)} />}
       {chart.kind === 'wall' && (
-        <WallChart chart={chart} heightU={chartHeightU} page={wallPage} onPage={onWallPage} />
+        <WallChart chart={chart} headU={headU} page={wallPage} onPage={onWallPage} />
       )}
       {chart.kind === 'rating' && <RatingChart chart={chart} />}
-      <footer className={s.footer}>
-        <span>
-          {groupDigits(view.answered)} of {groupDigits(view.totalPlayers)} answered
-        </span>
-      </footer>
     </section>
   );
 }

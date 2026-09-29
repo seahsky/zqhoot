@@ -17,6 +17,7 @@ import { HostGate } from '../host/HostGate.tsx';
 import { useHostSession } from '../host/useHostSession.ts';
 import { PresentScreen } from './PresentScreen.tsx';
 import { useFullscreen, usePersistentChoice, useReducedMotion, useStageTheme } from './hooks.ts';
+import { barStateFor } from './controls.ts';
 import { presenterKeyAction } from './keys.ts';
 import { qrDataUrl } from './qr.ts';
 
@@ -100,7 +101,8 @@ function PresentSession({ sessionId, auth }: { sessionId: string; auth: HostAuth
     if (cmd) session.send(cmd, 'End question');
   };
   const doLock = () => {
-    if (snap)
+    // The button is gone once the game has ended, and so is its key.
+    if (snap && barStateFor(snap).canLock)
       session.send(lockCommand(!snap.locked), snap.locked ? 'Unlock joining' : 'Lock joining');
   };
   const cycleScale = () =>
@@ -199,9 +201,7 @@ function PresentSession({ sessionId, auth }: { sessionId: string; auth: HostAuth
       onHelpClose={() => setHelp(false)}
       onReload={() => window.location.reload()}
       bar={{
-        nextLabel: next?.command ? next.label : null,
-        canClose: snap?.phase === 'question',
-        locked: snap?.locked ?? false,
+        ...barStateFor(snap),
         textScale: scale,
         dark: theme.dark,
         fullscreen: fullscreen.active,

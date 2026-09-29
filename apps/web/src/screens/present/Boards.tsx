@@ -4,6 +4,7 @@ import { ordinal } from '../../state/format.ts';
 import type { HostEnd } from '../../state/host.ts';
 import type { PresenterView, StandingRow } from '../../state/presenterView.ts';
 import { VisuallyHidden } from '../../ui/VisuallyHidden.tsx';
+import { gainText } from './copy.ts';
 import s from './Present.module.css';
 
 const style = (vars: Record<string, string | number>) => vars as CSSProperties;
@@ -81,7 +82,7 @@ export function LeaderboardView({
                 <td>{ordinal(e.rank)}</td>
                 <td className={s.nick}>{e.nickname}</td>
                 <td className={s.score}>{groupDigits(e.score)}</td>
-                <td className={s.delta}>{e.delta > 0 ? `+${groupDigits(e.delta)}` : ''}</td>
+                <td className={s.delta}>{gainText(e.delta)}</td>
               </tr>
             );
           })}

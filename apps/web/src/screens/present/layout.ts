@@ -16,6 +16,13 @@ export const STAGE_PAD_X_U = STAGE_WIDTH_U * 0.05;
 export const CONTENT_WIDTH_U = STAGE_WIDTH_U - 2 * STAGE_PAD_X_U;
 export const CONTENT_HEIGHT_U = 100 - 2 * STAGE_PAD_Y_U;
 
+/** The gap between the blocks of a screen (`.screen` in Present.module.css). */
+export const SCREEN_GAP_U = 2;
+/** The running header of a question or results screen: one row, question number and answer count. */
+export const TOPLINE_U = 4.5;
+/** What that header takes from the screen's height: the row and the gap under it. */
+export const HEADER_U = TOPLINE_U + SCREEN_GAP_U;
+
 /** Word wrapping leaves ragged lines, so a paragraph needs more lines than its length suggests. */
 const WRAP_SLACK = 1.18;
 
@@ -209,8 +216,6 @@ export function nameWall(names: readonly string[], widthU: number, heightU: numb
 /** The QR code and the gap between it and the join block (Present.module.css). */
 const QR_U = 27;
 const QR_GAP_U = 4;
-/** Gap between the join block and the wall (`.screen`). */
-const SCREEN_GAP_U = 2;
 /** Room kept in hand: real glyphs and line boxes are never exactly what the model says. */
 const WALL_SLACK_U = 1.5;
 /** A long quiz title is cut to this many lines so it cannot squeeze the wall. */
@@ -240,6 +245,41 @@ export function lobbyWallHeightU(o: {
     5.75 * titleLines + 0.6 + 5.4 * o.scale * urlLines + 0.6 + pinRow,
   );
   return CONTENT_HEIGHT_U - block - SCREEN_GAP_U - WALL_SLACK_U;
+}
+
+// ---------------------------------------------------------------------------
+// Room under the header
+// ---------------------------------------------------------------------------
+
+/** Kept in hand under a word cloud: its model is an estimate, and the box must not overflow. */
+const CHART_SLACK_U = 6;
+/** The same for the cards, whose model is tighter. */
+const CARDS_SLACK_U = 1;
+/** The pager's buttons are 5u tall, but never less than 24 CSS px (WCAG 2.5.8 target size). */
+const PAGER_U = 5;
+const PAGER_MIN_PX = 24;
+
+/**
+ * Height in u a chart with nothing below it can use: the content area less the running header,
+ * the prompt block (`headU`, the countdown included on a question) and the gap between them.
+ */
+export function chartRoomU(headU: number): number {
+  return CONTENT_HEIGHT_U - HEADER_U - headU - SCREEN_GAP_U - CHART_SLACK_U;
+}
+
+/**
+ * Height of the pager row in u. The px floor of its buttons wins on a small stage, where 5u is
+ * under 24 px, so the row needs the stage's unit in CSS px (`unitPx`, 0 while it is unknown).
+ */
+export function pagerHeightU(unitPx: number): number {
+  return unitPx > 0 ? Math.max(PAGER_U, PAGER_MIN_PX / unitPx) : PAGER_U;
+}
+
+/** What is left for the open-ended cards above the pager, whatever the size of the stage. */
+export function cardsHeightU(headU: number, unitPx: number): number {
+  return (
+    CONTENT_HEIGHT_U - HEADER_U - headU - 2 * SCREEN_GAP_U - pagerHeightU(unitPx) - CARDS_SLACK_U
+  );
 }
 
 // ---------------------------------------------------------------------------

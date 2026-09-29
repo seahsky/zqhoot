@@ -1,12 +1,12 @@
 /*
- * Every size here is in stage units: `--u` is 1% of the stage height (ui/Stage.module.css).
+ * Every size here is in stage units: `--u` is 1% of the stage height (ui/Stage.module.css), and
+ * so is every outline: `--outline-w` is set there too, proportional to the stage.
  * `--us` is `--u` times the text-size control, for the essential text that may grow.
  * Type scale (ADR-0016): countdown 18u, PIN 10u, question 7u (auto-fit 5-8u), podium names
  * 6.5u, answers and leaderboard 5u, chart labels 4.5u, essential text at least 4.3u, meta 3.5u.
  */
 .screen {
   --us: calc(var(--u) * var(--scale, 1));
-  --outline-w: max(3px, calc(var(--u) * 0.45));
   display: flex;
   flex-direction: column;
   gap: calc(var(--u) * 2);
@@ -29,26 +29,30 @@
 
 /* ---- Question ---------------------------------------------------------------------- */
 
-.screen {
-  position: relative;
+/*
+ * The running header of a question or results screen, first in the flow like the boards'
+ * headers, so it sits in the stage's safe area. Its height is fixed (TOPLINE_U in layout.ts)
+ * so the count appearing when the options open moves nothing.
+ */
+.topline {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  /* Bottom edges, not baselines: the question number stays put when the count is not shown. */
+  align-items: flex-end;
+  gap: calc(var(--u) * 3);
+  height: calc(var(--u) * 4.5);
 }
 
-/* The running header lives in the stage's 5% top margin, out of the way of the layout. */
 .eyebrow {
-  position: absolute;
-  top: calc(var(--u) * -4.3);
-  left: 0;
   font-size: calc(var(--u) * 3.5);
-  line-height: 1.1;
+  line-height: 1;
   font-weight: 700;
   color: var(--ink-2);
   white-space: nowrap;
 }
 
-.countTop {
-  position: absolute;
-  top: calc(var(--u) * -4.5);
-  right: 0;
+.count {
   font-size: calc(var(--u) * 4.3);
   line-height: 1;
   font-weight: 800;
@@ -320,24 +324,17 @@
   display: none;
 }
 
-/* Correct: thicker outline as well as the badge, so it never rests on colour. */
+/*
+ * Correct: thicker outline as well as the badge, so it never rests on colour. The cap keeps
+ * the two edges from ever covering more than two thirds of the track, whatever the outline.
+ */
 .correct .fill {
-  border-width: calc(var(--outline-w) * 2.2);
+  border-width: min(calc(var(--outline-w) * 2.2), calc(var(--u) * 1.2));
   border-left: 0;
 }
 
 .correct .rowLabel {
   font-weight: 800;
-}
-
-.footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: calc(var(--u) * 3);
-  font-size: calc(var(--u) * 3.5);
-  font-weight: 700;
-  color: var(--ink-2);
 }
 
 .cloud {
@@ -384,9 +381,10 @@
 }
 
 .pager {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: calc(var(--u) * 2);
+  gap: max(8px, calc(var(--u) * 2));
 }
 
 .pageButton {
@@ -425,7 +423,8 @@
   grid-template-columns: repeat(var(--n), minmax(0, 1fr));
   align-items: end;
   column-gap: calc(var(--u) * 1.6);
-  height: calc(var(--u) * 32);
+  /* 32u at 100%, less as the text-size control grows the numbers and labels around it. */
+  height: calc(var(--u) * (40 - 8 * var(--scale, 1)));
   border-bottom: calc(var(--outline-w) * 1.5) solid var(--ink);
 }
 

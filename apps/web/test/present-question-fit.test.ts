@@ -64,9 +64,10 @@ describe('the question layout at every text size', () => {
   });
 
   it('holds the countdown numeral back when the options would not fit beside it', () => {
-    // Found by search: at 150% the numeral pushes the prompt to more lines, and the cards then
-    // no longer fit at any size; at a smaller numeral they do.
-    const q = question(120, 80);
+    // Found by search (the running header takes 6.5u of the budget): at 150% the numeral pushes
+    // the prompt to more lines, and the cards then no longer fit at any size; at a smaller
+    // numeral they do.
+    const q = question(200, 60);
     const full = headFor(q, 1.5, 1.5, false);
     expect(optionFit(q, full.heightU, 1.5).fits).toBe(false);
 

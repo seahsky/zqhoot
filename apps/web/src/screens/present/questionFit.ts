@@ -1,15 +1,23 @@
 import type { PresentQuestion } from '../../state/presenterView.ts';
-import { CONTENT_HEIGHT_U, CONTENT_WIDTH_U, fitBy, flowedLines, linesFor } from './layout.ts';
+import {
+  CONTENT_HEIGHT_U,
+  CONTENT_WIDTH_U,
+  HEADER_U,
+  SCREEN_GAP_U,
+  fitBy,
+  flowedLines,
+  linesFor,
+} from './layout.ts';
 
 /**
- * How the question screen shares the stage's height between the countdown, the prompt and the
- * options, in stage units (layout.ts explains the model). The text-size control raises the
- * ceilings; nothing here may end up taller than the content area, which is what the presenter
- * composition tests check at every size and setting.
+ * How the question screen shares the stage's height between the running header, the countdown,
+ * the prompt and the options, in stage units (layout.ts explains the model). The text-size
+ * control raises the ceilings; nothing here may end up taller than the content area, which is
+ * what the presenter composition tests check at every size and setting.
  */
 
 export const PROMPT_LINE = 1.15;
-export const GAP_U = 2;
+export const GAP_U = SCREEN_GAP_U;
 /** The countdown numeral at 100%, its bar, and the gaps between. */
 const NUMERAL_U = 18;
 const TIMER_EXTRAS_U = 3 + 1.2;
@@ -70,7 +78,7 @@ export function optionFit(q: PresentQuestion, headU: number, scale: number): Opt
   const longest = q.options.reduce((a, o) => (o.text.length > a ? o.text.length : a), 0);
   const dense = longest > DENSE_AFTER_CHARS;
   const gap = dense ? 1.6 : GAP_U;
-  const budget = CONTENT_HEIGHT_U - headU - GAP_U;
+  const budget = CONTENT_HEIGHT_U - HEADER_U - headU - GAP_U;
   const pad = dense ? 2 * (1 + 0.45) : 2 * (1.6 + 0.45);
   // Glyph, letter, three gaps and the card's own side padding come off half the width.
   const overhead = dense ? 5 + 3.4 + 2 * 1.4 + 2 * 1.5 + 1 : 6.5 + 4 + 2 * 2 + 2 * 2 + 1;

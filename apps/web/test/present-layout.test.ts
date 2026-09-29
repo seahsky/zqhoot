@@ -3,6 +3,11 @@ import {
   CONTENT_HEIGHT_U,
   charEm,
   CONTENT_WIDTH_U,
+  HEADER_U,
+  SCREEN_GAP_U,
+  TOPLINE_U,
+  cardsHeightU,
+  chartRoomU,
   cloudLayout,
   fitFontUnits,
   flowedLines,
@@ -10,6 +15,7 @@ import {
   linesFor,
   lobbyWallHeightU,
   nameWall,
+  pagerHeightU,
   paginateCards,
   textWidthEm,
   wallMetrics,
@@ -21,6 +27,19 @@ describe('stage geometry', () => {
   it('is 16:9 with 5% padding: 160u by 90u of content', () => {
     expect(CONTENT_WIDTH_U).toBeCloseTo(160, 5);
     expect(CONTENT_HEIGHT_U).toBe(90);
+  });
+});
+
+describe('the running header', () => {
+  it('takes its row and the gap under it out of the screen: 6.5u', () => {
+    expect(TOPLINE_U).toBe(4.5);
+    expect(SCREEN_GAP_U).toBe(2);
+    expect(HEADER_U).toBe(6.5);
+  });
+
+  it('every chart has less room under a taller header, and less than the bare content area', () => {
+    expect(chartRoomU(10)).toBeLessThan(CONTENT_HEIGHT_U - HEADER_U - 10);
+    expect(chartRoomU(20)).toBeLessThan(chartRoomU(10));
   });
 });
 
@@ -386,6 +405,42 @@ describe('the open-ended wall', () => {
 
   it('no responses, no pages', () => {
     expect(paginateCards([], W, H).pages).toEqual([]);
+  });
+});
+
+describe('the room the open-ended cards get', () => {
+  it('the pager is 5u tall while that is 24 px or more, and 24 px on a smaller stage', () => {
+    // 1366x768: 1u is 7.68 px.
+    expect(pagerHeightU(7.68)).toBe(5);
+    // 768x432 (a tablet's stage): 1u is 4.32 px, and 5u is 21.6 px, under the floor.
+    expect(pagerHeightU(4.32)).toBeCloseTo(24 / 4.32, 6);
+    // 320x180: 1u is 1.8 px.
+    expect(pagerHeightU(1.8)).toBeCloseTo(24 / 1.8, 6);
+    // Unmeasured: the full-size row.
+    expect(pagerHeightU(0)).toBe(5);
+  });
+
+  it('is what is left above the header, the prompt, two gaps and the pager', () => {
+    const head = 8;
+    expect(cardsHeightU(head, 7.68)).toBeCloseTo(
+      CONTENT_HEIGHT_U - HEADER_U - head - 2 * SCREEN_GAP_U - 5 - 1,
+      6,
+    );
+  });
+
+  it('shrinks with the stage: the pager takes a bigger share of a small one', () => {
+    expect(cardsHeightU(8, 1.8)).toBeLessThan(cardsHeightU(8, 4.32));
+    expect(cardsHeightU(8, 4.32)).toBeLessThan(cardsHeightU(8, 7.68));
+    expect(cardsHeightU(8, 7.68)).toBe(cardsHeightU(8, 20));
+  });
+
+  it('a smaller stage pages the same responses over more pages, each within its room', () => {
+    const texts = Array.from({ length: 12 }, (_, i) => `Response ${i}: a line or two of thought`);
+    const pages = (unitPx: number) =>
+      paginateCards(texts, CONTENT_WIDTH_U, cardsHeightU(8, unitPx)).pages.length;
+    expect(pages(1.8)).toBeGreaterThanOrEqual(pages(7.68));
+    // 24 px of pager is over a quarter of a 180 px stage: at most 60u of room is left for cards.
+    expect(cardsHeightU(8, 1.8)).toBeLessThan(CONTENT_HEIGHT_U - 8 - 24 / 1.8);
   });
 });
 

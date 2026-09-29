@@ -5,7 +5,8 @@ import s from './HelpOverlay.module.css';
 /**
  * A native modal `<dialog>`: it traps focus, closes on Escape, and returns focus to the button
  * that opened it. `open` is the source of truth; the dialog's own close event (Escape) is
- * reported through `onClose` so the state follows.
+ * reported through `onClose` so the state follows. It is sized to the window, not to the stage:
+ * on a short window it scrolls inside itself, with the title and Close held at its edges.
  */
 export function HelpOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -43,9 +44,11 @@ export function HelpOverlay({ open, onClose }: { open: boolean; onClose: () => v
         ))}
       </dl>
       <p className={s.note}>The left arrow does nothing, so a clicker's back button is safe.</p>
-      <button type="button" className={s.close} onClick={onClose}>
-        Close
-      </button>
+      <div className={s.footer}>
+        <button type="button" className={s.close} onClick={onClose}>
+          Close
+        </button>
+      </div>
     </dialog>
   );
 }

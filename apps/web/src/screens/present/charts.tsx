@@ -7,10 +7,11 @@ import type { ChartData, ChartTable } from '../../state/presenterView.ts';
 import { AnswerGlyph } from '../../ui/AnswerGlyph.tsx';
 import { ResultIcon } from '../../ui/ResultIcon.tsx';
 import { SLOTS } from '../../ui/slots.ts';
+import { useStageUnitPx } from '../../ui/Stage.tsx';
 import { StatusLine } from '../../ui/StatusLine.tsx';
 import { VisuallyHidden } from '../../ui/VisuallyHidden.tsx';
 import { useThrottled } from './hooks.ts';
-import { CONTENT_WIDTH_U, cloudLayout, paginateCards } from './layout.ts';
+import { CONTENT_WIDTH_U, cardsHeightU, cloudLayout, paginateCards } from './layout.ts';
 import s from './Present.module.css';
 
 const style = (vars: Record<string, string | number>) => vars as CSSProperties;
@@ -126,21 +127,27 @@ export function CloudChart({
   );
 }
 
+/**
+ * Open-ended responses as cards, paged. The cards get the height that is left above the pager
+ * (`cardsHeightU`), which on a small stage is more than the 5u its buttons take at full size.
+ */
 export function WallChart({
   chart,
-  heightU,
+  headU,
   page,
   onPage,
 }: {
   chart: Extract<ChartData, { kind: 'wall' }>;
-  heightU: number;
+  /** Height of the prompt block above the cards, in u. */
+  headU: number;
   page: number;
   onPage: (page: number) => void;
 }) {
+  const unitPx = useStageUnitPx();
   const wall = paginateCards(
     chart.responses.map((r) => r.text),
     CONTENT_WIDTH_U,
-    heightU,
+    cardsHeightU(headU, unitPx),
   );
   const pages = Math.max(1, wall.pages.length);
   const current = Math.min(Math.max(0, page), pages - 1);

@@ -13,8 +13,9 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: calc(var(--bu) * 0.8);
-  padding: calc(var(--bu) * 0.6) calc(var(--bu) * 1.2);
+  /* The buttons have px floors (below), so the gap has one too: on a small window the bu is tiny. */
+  gap: max(6px, calc(var(--bu) * 0.8));
+  padding: max(4px, calc(var(--bu) * 0.6)) max(8px, calc(var(--bu) * 1.2));
   font-family: var(--font-ui);
   transition: opacity 200ms linear;
 }

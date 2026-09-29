@@ -710,7 +710,7 @@ test.describe('the presenter', () => {
     await new HostApi().attach(page);
     await signedIn(page);
     await page.goto(`/present?s=${SESSION}`);
-    await expect(page.getByTestId('answer-count')).toHaveText('1 / 3 answered');
+    await expect(page.getByTestId('answer-count')).toHaveText('1 of 3 answered');
     await expect.poll(() => server.clientMessages('host.close').length, { timeout: 6_000 }).toBe(1);
     expect(server.clientMessages('host.close')[0]).toEqual({
       type: 'host.close',

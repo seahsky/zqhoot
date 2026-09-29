@@ -1,10 +1,19 @@
-/* Sized in stage units: the overlay is a descendant of the stage body, which defines `--u`. */
+/*
+ * Type and spacing are in stage units (the overlay is a descendant of the stage body, which
+ * defines `--u`), but the box is sized to the window: a modal <dialog> is laid out against the
+ * viewport, and on a window shorter than its content it scrolls inside itself. The title and
+ * the Close button stick to its top and bottom edges, so both stay in reach.
+ */
 .dialog {
+  /* Side and end padding never drop below the focus ring's reach, or the ring meets the border. */
+  --pad-x: max(calc(var(--u) * 4), 10px);
+  --pad-y: max(calc(var(--u) * 2.5), 10px);
   width: calc(var(--u) * 120);
   max-width: calc(100vw - 2rem);
-  max-height: calc(var(--u) * 88);
-  padding: calc(var(--u) * 2.5) calc(var(--u) * 4);
-  border: max(3px, calc(var(--u) * 0.5)) solid var(--ink);
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  border: max(1px, calc(var(--u) * 0.5)) solid var(--ink);
   border-radius: calc(var(--u) * 1.6);
   background: var(--bg);
   color: var(--ink);
@@ -17,34 +26,39 @@
 }
 
 .title {
-  margin-bottom: calc(var(--u) * 1.5);
+  position: sticky;
+  top: 0;
+  padding: var(--pad-y) var(--pad-x) calc(var(--u) * 1.5);
+  background: var(--bg);
   font-size: calc(var(--u) * 5);
   font-weight: 800;
 }
 
+/* One grid for every row, so the descriptions line up in a column beside their keys. */
 .list {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--u) * 0.9);
+  display: grid;
+  /* The keys' width, up to a quarter of the box: Space and the arrow share a line, Page Down wraps. */
+  grid-template-columns: fit-content(calc(var(--u) * 30)) minmax(0, 1fr);
+  align-items: baseline;
+  gap: calc(var(--u) * 0.9) calc(var(--u) * 2);
   margin: 0;
+  padding: 0 var(--pad-x);
 }
 
 .row {
-  display: grid;
-  grid-template-columns: calc(var(--u) * 50) minmax(0, 1fr);
-  align-items: center;
-  gap: calc(var(--u) * 2);
+  display: contents;
 }
 
 .keys {
   display: flex;
   flex-wrap: wrap;
   gap: calc(var(--u) * 0.8);
+  margin: 0;
 }
 
 .key {
   padding: calc(var(--u) * 0.2) calc(var(--u) * 1.2);
-  border: max(2px, calc(var(--u) * 0.35)) solid var(--ink);
+  border: max(1px, calc(var(--u) * 0.35)) solid var(--ink);
   border-radius: calc(var(--u) * 0.8);
   background: var(--surface);
   font-family: inherit;
@@ -59,17 +73,25 @@
 }
 
 .note {
-  margin-top: calc(var(--u) * 1.5);
+  padding: calc(var(--u) * 1.5) var(--pad-x) 0;
   font-size: calc(var(--u) * 3.5);
   font-weight: 600;
   color: var(--ink-2);
 }
 
+.footer {
+  position: sticky;
+  bottom: 0;
+  /* The ring is drawn outside the button: leave it room above and below, clear of the note and the border. */
+  padding: max(calc(var(--u) * 1.5), calc(var(--focus-w) + var(--focus-offset) + 4px)) var(--pad-x)
+    var(--pad-y);
+  background: var(--bg);
+}
+
 .close {
-  margin-top: calc(var(--u) * 1.5);
   min-height: max(28px, calc(var(--u) * 5.5));
   padding: 0 calc(var(--u) * 3);
-  border: max(2px, calc(var(--u) * 0.4)) solid var(--ink);
+  border: max(1px, calc(var(--u) * 0.4)) solid var(--ink);
   border-radius: calc(var(--u) * 1.2);
   background: var(--ink);
   color: var(--bg);

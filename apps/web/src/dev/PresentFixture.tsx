@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { joinLink } from '../state/charts.ts';
 import { presenterView } from '../state/presenterView.ts';
 import { PresentScreen } from '../screens/present/PresentScreen.tsx';
+import { barStateFor } from '../screens/present/controls.ts';
 import { qrDataUrl } from '../screens/present/qr.ts';
 import { TEXT_SCALES } from '../ui/Stage.tsx';
 import type { TextScale } from '../ui/Stage.tsx';
@@ -23,7 +24,8 @@ export function PresentFixtureScreen({ id }: { id: PresentFixtureId }) {
   const [hidden, setHidden] = useState(false);
   const [help, setHelp] = useState<boolean>(fixture.helpOpen ?? false);
   const [wallPage, setWallPage] = useState(0);
-  const [locked, setLocked] = useState(false);
+  const game = barStateFor(fixture.state.snapshot);
+  const [locked, setLocked] = useState(game.locked);
 
   const view = presenterView(fixture.state, NOW);
   const link = joinLink(JOIN_URL, HOST_PIN);
@@ -57,8 +59,7 @@ export function PresentFixtureScreen({ id }: { id: PresentFixtureId }) {
       onHelpClose={() => setHelp(false)}
       onReload={noop}
       bar={{
-        nextLabel: view.screen === 'lobby' ? 'Start' : 'Next',
-        canClose: view.screen === 'question',
+        ...game,
         locked,
         textScale: scale,
         dark,

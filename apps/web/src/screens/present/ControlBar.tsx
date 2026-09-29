@@ -1,12 +1,8 @@
 import type { TextScale } from '../../ui/Stage.tsx';
+import type { BarState } from './controls.ts';
 import s from './ControlBar.module.css';
 
-export interface ControlBarProps {
-  /** Label of the big advance action ("Start", "End question", ...), or null when there is none. */
-  nextLabel: string | null;
-  /** A question is open, so the host may end it now. */
-  canClose: boolean;
-  locked: boolean;
+export interface ControlBarProps extends BarState {
   textScale: TextScale;
   dark: boolean;
   fullscreen: boolean;
@@ -45,9 +41,11 @@ export function ControlBar(p: ControlBarProps) {
           End question
         </button>
       )}
-      <button type="button" className={s.button} onClick={p.onLock} aria-pressed={p.locked}>
-        {p.locked ? 'Unlock joining' : 'Lock joining'}
-      </button>
+      {p.canLock && (
+        <button type="button" className={s.button} onClick={p.onLock} aria-pressed={p.locked}>
+          {p.locked ? 'Unlock joining' : 'Lock joining'}
+        </button>
+      )}
       <button type="button" className={s.button} onClick={p.onTextSize}>
         Text size {Math.round(p.textScale * 100)}%
       </button>
