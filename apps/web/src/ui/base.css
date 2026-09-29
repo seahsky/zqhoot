@@ -23,13 +23,15 @@ body {
 h1,
 h2,
 h3,
+h4,
 p {
   margin: 0;
 }
 
 h1,
 h2,
-h3 {
+h3,
+h4 {
   line-height: 1.15;
   font-weight: 800;
   overflow-wrap: anywhere;
@@ -39,8 +41,10 @@ h1 {
   font-size: var(--fs-title);
 }
 
+/* Form controls keep the UA's font otherwise, which is smaller and a different face. */
 button,
 input,
+select,
 textarea {
   font: inherit;
   color: inherit;

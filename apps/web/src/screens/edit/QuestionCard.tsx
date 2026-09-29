@@ -15,9 +15,11 @@ import {
   typeLabel,
 } from '../../state/editor.ts';
 import { SLOTS } from '../../ui/slots.ts';
+import { AnswerGlyph } from '../../ui/AnswerGlyph.tsx';
 import { Button } from '../../ui/Button.tsx';
 import { CheckboxField, RadioGroup, SelectField } from '../../ui/Controls.tsx';
 import { TextArea, TextField } from '../../ui/TextField.tsx';
+import fieldStyles from '../../ui/TextField.module.css';
 import { ImageField } from './ImageField.tsx';
 import styles from './Editor.module.css';
 
@@ -26,6 +28,8 @@ export interface QuestionCardProps {
   count: number;
   question: Question;
   open: boolean;
+  /** How many problems the last failed save found in this question. */
+  problems: number;
   errorOf: (fieldId: string) => string | undefined;
   urlFor: (key: string) => string;
   uploading: boolean;
@@ -69,35 +73,36 @@ function OptionsEditor({
         {q.options.map((o, j) => {
           const letter = SLOTS[j]?.letter ?? String(j + 1);
           return (
-            <li key={o.id} className={styles.optionRow}>
-              <div className={styles.optionField}>
-                <TextField
-                  fieldId={fieldId(['questions', index, 'options', j, 'text'])}
-                  label={`Answer ${letter}`}
-                  value={o.text}
-                  counter={`${o.text.length} / ${LIMITS.optionTextMax}`}
-                  error={errorOf(fieldId(['questions', index, 'options', j, 'text']))}
-                  autoComplete="off"
-                  onChange={(e) =>
-                    onChange({
-                      ...q,
-                      options: q.options.map((x, k) =>
-                        k === j ? { ...x, text: e.target.value } : x,
-                      ),
-                    } as Question)
-                  }
-                />
-              </div>
-              {canRemoveOption(q) && (
-                <Button
-                  size="compact"
-                  variant="secondary"
-                  onClick={() => onChange(removeOption(q, j))}
-                  aria-label={`Remove answer ${letter}`}
-                >
-                  Remove
-                </Button>
-              )}
+            <li key={o.id}>
+              <TextField
+                fieldId={fieldId(['questions', index, 'options', j, 'text'])}
+                label={`Answer ${letter}`}
+                adornment={<AnswerGlyph slot={j} size={24} />}
+                value={o.text}
+                counter={`${o.text.length} / ${LIMITS.optionTextMax}`}
+                error={errorOf(fieldId(['questions', index, 'options', j, 'text']))}
+                autoComplete="off"
+                onChange={(e) =>
+                  onChange({
+                    ...q,
+                    options: q.options.map((x, k) =>
+                      k === j ? { ...x, text: e.target.value } : x,
+                    ),
+                  } as Question)
+                }
+                action={
+                  canRemoveOption(q) && (
+                    <Button
+                      size="compact"
+                      variant="secondary"
+                      onClick={() => onChange(removeOption(q, j))}
+                      aria-label={`Remove answer ${letter}`}
+                    >
+                      Remove
+                    </Button>
+                  )
+                }
+              />
             </li>
           );
         })}
@@ -138,6 +143,7 @@ function TypeFields({
             options={q.options.map((o, j) => ({
               value: o.id,
               label: `${SLOTS[j]?.letter ?? j + 1} · ${o.text.trim() === '' ? '(no text yet)' : o.text}`,
+              adornment: <AnswerGlyph slot={j} size={24} />,
             }))}
             onChange={(id) => onChange({ ...q, correctOptionId: id })}
           />
@@ -152,8 +158,8 @@ function TypeFields({
           value={q.correct ? 'true' : 'false'}
           inline
           options={[
-            { value: 'true', label: 'True' },
-            { value: 'false', label: 'False' },
+            { value: 'true', label: 'True', adornment: <AnswerGlyph slot={0} size={24} /> },
+            { value: 'false', label: 'False', adornment: <AnswerGlyph slot={1} size={24} /> },
           ]}
           onChange={(v) => onChange({ ...q, correct: v === 'true' })}
         />
@@ -242,7 +248,14 @@ export function QuestionCard(p: QuestionCardProps) {
   const { question: q, index } = p;
   const bodyId = `question-body-${q.id}`;
   return (
-    <li className={styles.card} data-question={index}>
+    <li
+      className={styles.card}
+      id={fieldId(['questions', index])}
+      tabIndex={-1}
+      data-question={index}
+      data-open={p.open}
+      data-invalid={p.problems > 0}
+    >
       <div className={styles.cardHead}>
         <button
           type="button"
@@ -255,6 +268,28 @@ export function QuestionCard(p: QuestionCardProps) {
           <span className={styles.summaryText}>
             <span className={styles.type}>{typeLabel(q.type)}</span>
             <span className={styles.preview}>{summaryText(q)}</span>
+            {p.problems > 0 && (
+              <span className={styles.problemTag}>
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 3 22 21H2Z" className={fieldStyles.errorIcon} />
+                  <path d="M12 10v5M12 17.5v.5" className={fieldStyles.errorMark} />
+                </svg>
+                {p.problems === 1 ? '1 problem' : `${p.problems} problems`}
+              </span>
+            )}
+          </span>
+          <span className={styles.disclosure} aria-hidden="true">
+            {p.open ? 'Close' : 'Edit'}
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path
+                d="M6 9l6 6 6-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </span>
         </button>
         <div className={styles.cardActions}>

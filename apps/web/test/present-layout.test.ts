@@ -48,7 +48,7 @@ describe('text measuring', () => {
     expect(charEm('i')).toBeLessThan(charEm('n'));
     expect(charEm('n')).toBeLessThan(charEm('N'));
     expect(charEm('N')).toBeLessThan(charEm('m'));
-    expect(textWidthEm('Amarathe Bold2')).toBeGreaterThan(textWidthEm('illicit lilies'));
+    expect(textWidthEm('Amara the Bold2')).toBeGreaterThan(textWidthEm('illicit lilies'));
     expect(textWidthEm('')).toBe(0);
   });
 

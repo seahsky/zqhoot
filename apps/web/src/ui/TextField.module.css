@@ -9,6 +9,17 @@
   font-weight: 700;
 }
 
+.labelRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.labelRow svg {
+  width: 1.3em;
+  height: 1.3em;
+}
+
 .hint {
   font-size: var(--fs-small);
   color: var(--ink-2);
@@ -47,7 +58,74 @@
 
 .area {
   min-height: 8rem;
+  /* Grows with the prompt, so a 200-character question is never cut off. */
+  field-sizing: content;
   resize: vertical;
+}
+
+/*
+ * An action beside the input (a Remove button). Wide: the button is centred on the input and the
+ * counter sits under the input, so the button never moves down with it. Narrow: the input
+ * keeps the full width and the button moves up to the label's row, still with its own field.
+ */
+.actionBox {
+  container-type: inline-size;
+}
+
+.withAction {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'label label'
+    'control action'
+    'meta .';
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.withAction.withHint {
+  grid-template-areas:
+    'label label'
+    'hint hint'
+    'control action'
+    'meta .';
+}
+
+@container (max-width: 22rem) {
+  .withAction {
+    grid-template-areas:
+      'label action'
+      'control control'
+      'meta meta';
+  }
+
+  .withAction.withHint {
+    grid-template-areas:
+      'label action'
+      'hint hint'
+      'control control'
+      'meta meta';
+  }
+}
+
+.withAction > .label {
+  grid-area: label;
+}
+
+.withAction > .hint {
+  grid-area: hint;
+}
+
+.withAction > .control {
+  grid-area: control;
+}
+
+.withAction > .meta {
+  grid-area: meta;
+}
+
+.action {
+  grid-area: action;
 }
 
 .meta {
@@ -67,7 +145,9 @@
 
 .error svg {
   flex: none;
-  margin-top: 0.1rem;
+  width: 1.25em;
+  height: 1.25em;
+  margin-top: 0.05em;
 }
 
 .errorIcon {

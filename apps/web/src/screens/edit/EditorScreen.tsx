@@ -262,6 +262,7 @@ export function EditorScreen(p: EditorScreenProps) {
                 count={draft.questions.length}
                 question={q}
                 open={p.openIndex === i}
+                problems={p.issues.filter((issue) => issue.question === i).length}
                 errorOf={errorOf}
                 urlFor={p.urlFor}
                 uploading={p.uploading.includes(q.id)}
@@ -288,11 +289,9 @@ export function EditorScreen(p: EditorScreenProps) {
           <div className={styles.addRow}>
             <SelectField
               label="New question type"
+              hint={QUESTION_TYPES.find((t) => t.type === newType)?.hint}
               value={newType}
-              options={QUESTION_TYPES.map((t) => ({
-                value: t.type,
-                label: `${t.label}: ${t.hint}`,
-              }))}
+              options={QUESTION_TYPES.map((t) => ({ value: t.type, label: t.label }))}
               onChange={(v) => setNewType(v as QuestionType)}
             />
             <Button

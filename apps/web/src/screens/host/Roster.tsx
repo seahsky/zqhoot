@@ -59,10 +59,13 @@ export function Roster({
             {shown.map((r) => (
               <li key={r.playerId} className={styles.rosterRow}>
                 <span className={styles.rosterName}>{r.nickname}</span>
-                <span className={styles.meta}>{r.connected ? 'connected' : 'offline'}</span>
+                <span className={styles.rosterStatus} data-online={r.connected}>
+                  {r.connected ? 'connected' : 'offline'}
+                </span>
                 <Button
                   size="compact"
                   variant="secondary"
+                  className={styles.rosterKick}
                   onClick={() => setPending(r)}
                   aria-label={`Kick ${r.nickname}`}
                 >

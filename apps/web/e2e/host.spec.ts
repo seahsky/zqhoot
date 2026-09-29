@@ -900,11 +900,11 @@ test.describe('the editor', () => {
       await page.getByLabel('New question type').selectOption({ label });
       await page.getByRole('button', { name: 'Add question' }).click();
     };
-    await add('True or false: One statement, one correct side');
+    await add('True or false');
     await page.getByLabel('Question', { exact: true }).fill('The Moon is made of rock.');
     await page.getByLabel('True', { exact: true }).check();
 
-    await add('Poll: 2 to 6 options, no right answer');
+    await add('Poll');
     await page.getByLabel('Question', { exact: true }).fill('Where to eat?');
     await page.getByLabel('Answer A', { exact: true }).fill('Cafe');
     await page.getByLabel('Answer B', { exact: true }).fill('Park');
@@ -913,18 +913,18 @@ test.describe('the editor', () => {
     await page.getByRole('button', { name: 'Add answer' }).click();
     await page.getByLabel('Answer E', { exact: true }).fill('Truck');
 
-    await add('Word cloud: Players send words; the most common grow');
+    await add('Word cloud');
     await page.getByLabel('Question', { exact: true }).fill('One word for this week?');
     await page.getByLabel('Words per player').selectOption('4');
 
-    await add('Open-ended: Players write a response you can approve');
+    await add('Open-ended');
     await page.getByLabel('Question', { exact: true }).fill('What should we do next?');
     await page.getByLabel('Responses per player').selectOption('2');
     const approval = page.getByLabel('Approve responses before they show');
     await expect(approval).toBeChecked(); // on by default
     await approval.uncheck();
 
-    await add('Rating: A scale from 1 up to 3 to 10');
+    await add('Rating');
     await page.getByLabel('Question', { exact: true }).fill('How was it?');
     await page.getByLabel('Scale').selectOption('7');
     await page.getByLabel('Label for 1 (optional)').fill('Poor');
@@ -961,9 +961,7 @@ test.describe('the editor', () => {
   test('questions move up and down with buttons, and duplicate and delete', async ({ page }) => {
     await editor(page);
     await fillFirstQuestion(page);
-    await page
-      .getByLabel('New question type')
-      .selectOption({ label: 'Rating: A scale from 1 up to 3 to 10' });
+    await page.getByLabel('New question type').selectOption({ label: 'Rating' });
     await page.getByRole('button', { name: 'Add question' }).click();
     await page.getByLabel('Question', { exact: true }).fill('Second question');
     const order = async () => page.locator('[data-question] [class*="preview"]').allTextContents();
@@ -1073,9 +1071,7 @@ test.describe('the editor', () => {
   }) => {
     const { api } = await editor(page);
     await fillFirstQuestion(page);
-    await page
-      .getByLabel('New question type')
-      .selectOption({ label: 'Rating: A scale from 1 up to 3 to 10' });
+    await page.getByLabel('New question type').selectOption({ label: 'Rating' });
     await page.getByRole('button', { name: 'Add question' }).click();
     await page.getByLabel('Question', { exact: true }).fill('Second question');
 
@@ -1130,9 +1126,7 @@ test.describe('the editor', () => {
   test('moving the card above the open one keeps the same question open', async ({ page }) => {
     await editor(page);
     await fillFirstQuestion(page);
-    await page
-      .getByLabel('New question type')
-      .selectOption({ label: 'Rating: A scale from 1 up to 3 to 10' });
+    await page.getByLabel('New question type').selectOption({ label: 'Rating' });
     await page.getByRole('button', { name: 'Add question' }).click();
     await page.getByLabel('Question', { exact: true }).fill('Second question');
 

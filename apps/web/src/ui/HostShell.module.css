@@ -21,7 +21,12 @@
   border-bottom: var(--outline-w) solid var(--ink);
 }
 
+/* The same box as the nav links and buttons beside it, so the header (and the rule under it) is
+   as tall on the sign-in page, where the wordmark stands alone, as on every other host page. */
 .brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
   font-size: 1.75rem;
   font-weight: 800;
   letter-spacing: -0.03em;

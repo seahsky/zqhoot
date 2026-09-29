@@ -4,13 +4,11 @@ import { validateDraft } from '../../state/editor.ts';
 import type { FieldIssue, QuizDraft } from '../../state/editor.ts';
 import {
   IMAGE_KEY,
-  openQ,
+  QUIZ_QUESTIONS,
   pollQ,
   ratingQ,
   singleImageQ,
   singleQ,
-  trueFalseQ,
-  wordCloudQ,
 } from './hostSnapshots.ts';
 
 /**
@@ -20,14 +18,7 @@ import {
 export const EDIT_QUIZ: QuizDraft = {
   title: 'Friday night trivia',
   settings: { ...DEFAULT_QUIZ_SETTINGS, streakBonus: true },
-  questions: [
-    { ...singleQ },
-    { ...trueFalseQ },
-    { ...pollQ },
-    { ...wordCloudQ },
-    { ...openQ },
-    { ...ratingQ },
-  ],
+  questions: QUIZ_QUESTIONS.map((q) => ({ ...q })),
 };
 
 /** Index of the question of each type in `EDIT_QUIZ`. */

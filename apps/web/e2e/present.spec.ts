@@ -377,8 +377,8 @@ test.describe('charts and motion', () => {
     page,
   }) => {
     await openScreen(page, 'present-reveal-single');
-    await expect(page.getByText('A · Mercury · 14 · 47%')).toBeVisible();
-    await expect(page.getByText('B · Venus · 9 · 30%')).toBeVisible();
+    await expect(page.getByText('A · Mercury · 10 · 50%')).toBeVisible();
+    await expect(page.getByText('B · Venus · 6 · 30%')).toBeVisible();
     await expect(page.locator('[class*="badge"]', { hasText: 'Correct' })).toHaveCount(1);
     const widths = await page
       .locator('li:has([class*="track"]) [class*="_fill_"]')

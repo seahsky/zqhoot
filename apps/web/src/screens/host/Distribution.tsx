@@ -1,8 +1,18 @@
+import type { CSSProperties } from 'react';
 import type { LiveStats, Question, QuestionResult } from '@zqhoot/protocol';
 import { barRow, formatAverage, percentOf, ratingBars, sizeWords } from '../../state/charts.ts';
 import type { BarRow } from '../../state/charts.ts';
 import { AnswerGlyph } from '../../ui/AnswerGlyph.tsx';
+import { cx } from '../../ui/cx.ts';
+import { SLOTS } from '../../ui/slots.ts';
 import styles from './Host.module.css';
+
+/** A bar's length and, for an answer, its slot colour (ADR-0016: fills colour glyphs and bars). */
+function fillStyle(percent: number, token?: string): CSSProperties {
+  const style: Record<string, string> = { width: `${percent}%` };
+  if (token) style['--fill-color'] = `var(${token})`;
+  return style;
+}
 
 /**
  * What the host sees of the answers: a distribution while the question is open (hosts may see
@@ -52,7 +62,10 @@ function Bars({ rows, marksCorrect }: { rows: BarRow[]; marksCorrect: boolean })
             {r.count} · {r.percent}%
           </span>
           <span className={styles.barTrack} aria-hidden="true">
-            <span className={styles.barFill} style={{ width: `${r.percent}%` }} />
+            <span
+              className={cx(styles.barFill, r.count === 0 && styles.barFillEmpty)}
+              style={fillStyle(r.percent, SLOTS[r.slot]?.token)}
+            />
           </span>
         </li>
       ))}
@@ -132,7 +145,10 @@ function RatingList({
           <li key={b.value}>
             <span>{b.value}</span>
             <span className={styles.barTrack} aria-hidden="true">
-              <span className={styles.barFill} style={{ width: `${b.height * 100}%` }} />
+              <span
+                className={cx(styles.barFill, b.count === 0 && styles.barFillEmpty)}
+                style={fillStyle(b.height * 100)}
+              />
             </span>
             <span className="tabular">{b.count}</span>
           </li>

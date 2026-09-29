@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import type { HostSnapshot, ModerationStatus } from '@zqhoot/protocol';
 import { formatPin } from '../../state/charts.ts';
 import { nextAction } from '../../state/commands.ts';
@@ -37,6 +37,19 @@ function connectionText(status: HostState['connection']): string {
   return '';
 }
 
+/**
+ * The URL is read aloud and typed in, so it may only break after a slash or a dot, and never
+ * inside its scheme prefix. A break opportunity adds no text, so copying still gives the whole URL.
+ */
+function BreakableUrl({ url }: { url: string }) {
+  return url.split(/(?<=[/.])(?!\/)/).map((part, i) => (
+    <Fragment key={i}>
+      {i > 0 && <wbr />}
+      {part}
+    </Fragment>
+  ));
+}
+
 function Summary({
   snap,
   players,
@@ -60,8 +73,11 @@ function Summary({
         {snap.locked && <li className={styles.chip}>Joining locked</li>}
       </ul>
       <p className={styles.join}>
-        Players join at <strong>{joinUrl}</strong> with PIN{' '}
-        <strong className={styles.pin}>{formatPin(snap.pin)}</strong>
+        Players join at{' '}
+        <strong className={styles.joinUrl}>
+          <BreakableUrl url={joinUrl} />
+        </strong>{' '}
+        with PIN <strong className={styles.pin}>{formatPin(snap.pin)}</strong>
       </p>
     </div>
   );
@@ -169,7 +185,7 @@ export function LiveScreen(p: LiveScreenProps) {
 
   return (
     <HostShell displayName={p.displayName} onSignOut={p.onSignOut}>
-      <StatusLine>{connectionText(state.connection)}</StatusLine>
+      <StatusLine className={styles.statusSlot}>{connectionText(state.connection)}</StatusLine>
       {state.notice && (
         <div className={styles.noticeBox}>
           <p role="alert" className={styles.problem}>
@@ -207,7 +223,7 @@ export function LiveScreen(p: LiveScreenProps) {
               />
               <Current state={state} snap={snap} onModerate={p.onModerate} />
             </div>
-            <section className={styles.side} aria-labelledby="players-title">
+            <section className={styles.panel} aria-labelledby="players-title">
               <h2 id="players-title" className={styles.h2}>
                 Players
               </h2>

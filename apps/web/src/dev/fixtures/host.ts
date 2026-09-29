@@ -3,42 +3,60 @@ import type { HostState } from '../../state/host.ts';
 import { NOW } from './common.ts';
 import {
   MERCURY_RESULT,
+  PLAYERS,
   QUIZ_ID,
+  QUIZ_QUESTIONS,
+  hostRoster,
   hostSnapshot,
   openQ,
   openResponses,
   questionSnapshot,
+  quizIndexOf,
   revealSnapshot,
-  roster,
   singleQ,
 } from './hostSnapshots.ts';
 import { hostStateOf, statsFor } from './hostState.ts';
 
 export { HOST_FIXTURE_MESSAGES } from './hostState.ts';
 
-/** The host's own screens: the live control in four phases. */
+/**
+ * The host's own screens: the live control in four phases, all of one 22-player game of the
+ * quiz the editor shows. Each question sits at its place in that quiz, so "Question 5 of 6" is
+ * the open-ended one here and in the editor.
+ */
+const SINGLE_AT = quizIndexOf(singleQ);
+const OPEN_AT = quizIndexOf(openQ);
+
 export const HOST_LIVE_FIXTURES = {
-  'host-live-lobby': hostStateOf(hostSnapshot({ roster: roster(22, [3, 7]) })),
+  'host-live-lobby': hostStateOf(hostSnapshot({ roster: hostRoster([3, 7]) })),
   'host-live-question': hostStateOf(
-    questionSnapshot(singleQ, 8_000, { roster: roster(22) }),
-    statsFor({
-      type: 'single',
-      answered: 14,
-      totalPlayers: 22,
-      counts: { 'option-mercury': 7, 'option-venus': 4, 'option-earth': 2, 'option-mars': 1 },
-    }),
+    questionSnapshot(singleQ, 8_000, { roster: hostRoster() }, SINGLE_AT),
+    statsFor(
+      {
+        type: 'single',
+        answered: 14,
+        totalPlayers: PLAYERS,
+        counts: { 'option-mercury': 7, 'option-venus': 4, 'option-earth': 2, 'option-mars': 1 },
+      },
+      SINGLE_AT,
+    ),
   ),
   'host-live-moderation': hostStateOf(
-    questionSnapshot(openQ, 30_000, { roster: roster(22) }),
-    statsFor({
-      type: 'open',
-      answered: 10,
-      totalPlayers: 22,
-      responses: openResponses(),
-      cursor: null,
-    }),
+    questionSnapshot(openQ, 30_000, { roster: hostRoster() }, OPEN_AT),
+    statsFor(
+      {
+        type: 'open',
+        answered: 10,
+        totalPlayers: PLAYERS,
+        responses: openResponses(),
+        cursor: null,
+      },
+      OPEN_AT,
+    ),
   ),
-  'host-live-reveal': hostStateOf(revealSnapshot(singleQ, MERCURY_RESULT, { roster: roster(32) })),
+  'host-live-reveal': hostStateOf(
+    revealSnapshot(singleQ, MERCURY_RESULT, { roster: hostRoster() }, SINGLE_AT),
+  ),
 } satisfies Record<string, HostState>;
 
 export type HostLiveFixtureId = keyof typeof HOST_LIVE_FIXTURES;
@@ -49,7 +67,7 @@ export const DASHBOARD_QUIZZES: QuizSummary[] = [
   {
     id: QUIZ_ID,
     title: 'Friday night trivia',
-    questionCount: 10,
+    questionCount: QUIZ_QUESTIONS.length,
     updatedAt: NOW - 2 * DAY,
     version: 4,
   },

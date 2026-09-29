@@ -66,21 +66,23 @@ export function SelectField({
           {hint}
         </p>
       )}
-      <select
-        id={id}
-        className={styles.select}
-        value={value}
-        disabled={disabled}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy(hint && hintId, error && errorId)}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      <div className={styles.selectWrap}>
+        <select
+          id={id}
+          className={styles.select}
+          value={value}
+          disabled={disabled}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy(hint && hintId, error && errorId)}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
       {error && <ErrorLine id={errorId} error={error} />}
     </div>
   );

@@ -131,6 +131,29 @@ export const ratingQ: Extract<Question, { type: 'rating' }> = {
   maxLabel: 'Extremely likely',
 };
 
+/**
+ * The demo quiz, in order. The editor fixture, the dashboard's question count and the live
+ * control's "Question N of M" all read from it, so they describe one quiz.
+ */
+export const QUIZ_QUESTIONS: readonly Question[] = [
+  singleQ,
+  trueFalseQ,
+  pollQ,
+  wordCloudQ,
+  openQ,
+  ratingQ,
+];
+
+/** Zero-based position of a question in the demo quiz. Matches the question itself, not its type. */
+export function quizIndexOf(question: Question): number {
+  const at = QUIZ_QUESTIONS.indexOf(question);
+  if (at < 0) throw new Error(`question ${question.id} is not in the demo quiz`);
+  return at;
+}
+
+/** Everyone in the demo game. The lobby, question and result fixtures all use this roster size. */
+export const PLAYERS = 22;
+
 // ---------------------------------------------------------------------------
 // Roster
 // ---------------------------------------------------------------------------
@@ -157,7 +180,7 @@ const FIRST = [
   'Hiro',
   'Ines',
 ];
-const TAIL = ['', 'the Bold', '_99', 'Quizzer', ' K.', 'Fox', '2000', 'Rocket', '', 'Owl'];
+const TAIL = ['', ' the Bold', '_99', 'Quizzer', ' K.', 'Fox', '2000', 'Rocket', '', 'Owl'];
 
 /** `n` distinct, deterministic nicknames of 2 to 16 characters, in join order. */
 export function names(n: number): string[] {
@@ -184,6 +207,31 @@ export function roster(n: number, disconnected: readonly number[] = []): RosterE
   }));
 }
 
+/** The longest nickname the protocol allows (16), so the roster is seen at its widest. */
+export const LONGEST_NICKNAME = 'Dmitri the Bold2';
+
+/**
+ * Two more 16-character nicknames, both one word, so they cannot wrap at a space. Wide capitals
+ * are the hardest case for a list row: it has to keep each of them whole at every width.
+ */
+export const LONG_WORD_NICKNAMES = ['MAXIMILIANWAGNER', 'WOLFGANG_AMADEUS'] as const;
+
+/**
+ * The room as the host sees it: `roster`, but the newest players, who are listed first, have
+ * 16-character nicknames (`LONGEST_NICKNAME` last, so it heads the list). The host lists must
+ * show each of them on one line at 320 px.
+ */
+export function hostRoster(disconnected: readonly number[] = []): RosterEntry[] {
+  const list = roster(PLAYERS, disconnected);
+  const longest = [...LONG_WORD_NICKNAMES, LONGEST_NICKNAME];
+  longest.forEach((nickname, i) => {
+    const at = list.length - longest.length + i;
+    const entry = list[at];
+    if (entry) list[at] = { ...entry, nickname };
+  });
+  return list;
+}
+
 // ---------------------------------------------------------------------------
 // Snapshots
 // ---------------------------------------------------------------------------
@@ -200,9 +248,9 @@ export function hostSnapshot(over: Partial<HostSnapshot> = {}): HostSnapshot {
     settings: { ...DEFAULT_QUIZ_SETTINGS },
     phase: 'lobby',
     questionIndex: -1,
-    totalQuestions: 10,
+    totalQuestions: QUIZ_QUESTIONS.length,
     locked: false,
-    roster: roster(22),
+    roster: roster(PLAYERS),
     hasScoredQuestions: true,
     ...over,
   };
@@ -257,25 +305,25 @@ export function revealSnapshot(
 
 export const MERCURY_RESULT: QuestionResult = {
   type: 'single',
-  answered: 30,
-  totalPlayers: 32,
+  answered: 20,
+  totalPlayers: PLAYERS,
   correctOptionId: 'option-mercury',
-  counts: { 'option-mercury': 14, 'option-venus': 9, 'option-earth': 5, 'option-mars': 2 },
+  counts: { 'option-mercury': 10, 'option-venus': 6, 'option-earth': 3, 'option-mars': 1 },
 };
 
 export const WALL_RESULT: QuestionResult = {
   type: 'truefalse',
-  answered: 28,
-  totalPlayers: 32,
+  answered: 20,
+  totalPlayers: PLAYERS,
   correct: false,
-  counts: { true: 6, false: 22 },
+  counts: { true: 5, false: 15 },
 };
 
 export const LUNCH_RESULT: QuestionResult = {
   type: 'poll',
-  answered: 31,
-  totalPlayers: 32,
-  counts: { 'option-cafe': 12, 'option-park': 15, 'option-deli': 4 },
+  answered: 21,
+  totalPlayers: PLAYERS,
+  counts: { 'option-cafe': 8, 'option-park': 10, 'option-deli': 3 },
 };
 
 export const WEATHER_WORDS = [
@@ -301,8 +349,8 @@ export const WEATHER_WORDS = [
 
 export const WEATHER_RESULT: QuestionResult = {
   type: 'wordcloud',
-  answered: 29,
-  totalPlayers: 32,
+  answered: 20,
+  totalPlayers: PLAYERS,
   words: WEATHER_WORDS.map(([text, count]) => ({ text, count })),
 };
 
@@ -334,16 +382,16 @@ export function openResponses(
 export const OFFSITE_RESULT: QuestionResult = {
   type: 'open',
   answered: 10,
-  totalPlayers: 32,
+  totalPlayers: PLAYERS,
   responses: openResponses(),
 };
 
 export const RATING_RESULT: QuestionResult = {
   type: 'rating',
-  answered: 27,
-  totalPlayers: 32,
-  histogram: [1, 2, 6, 11, 7],
-  average: 3.8,
+  answered: 21,
+  totalPlayers: PLAYERS,
+  histogram: [1, 2, 5, 8, 5],
+  average: 3.7,
 };
 
 export const LEADERBOARD: LeaderboardEntry[] = [

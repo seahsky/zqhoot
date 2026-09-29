@@ -42,7 +42,8 @@ function QuizCard(p: {
       <div className={styles.cardHead}>
         <h3 className={styles.cardTitle}>{quiz.title}</h3>
         <p className={styles.meta}>
-          {questionCountLabel(quiz.questionCount)} · edited {formatWhen(quiz.updatedAt)}
+          {questionCountLabel(quiz.questionCount)} ·{' '}
+          <span className={styles.nowrap}>edited {formatWhen(quiz.updatedAt)}</span>
         </p>
       </div>
       <div className={styles.actions}>
@@ -92,8 +93,9 @@ function SessionCard(p: {
       <div className={styles.cardHead}>
         <h3 className={styles.cardTitle}>{session.quizTitle}</h3>
         <p className={styles.meta}>
-          PIN {formatPin(session.pin)} · {PHASE_LABEL[session.phase]} · started{' '}
-          {formatWhen(session.createdAt)}
+          <span className={styles.nowrap}>PIN {formatPin(session.pin)}</span> ·{' '}
+          {PHASE_LABEL[session.phase]} ·{' '}
+          <span className={styles.nowrap}>started {formatWhen(session.createdAt)}</span>
         </p>
       </div>
       <div className={styles.actions}>
@@ -144,7 +146,7 @@ export function DashboardScreen(p: DashboardScreenProps) {
   const [pendingDelete, setPendingDelete] = useState<QuizSummary | null>(null);
   return (
     <HostShell displayName={p.displayName} onSignOut={p.onSignOut}>
-      <StatusLine>{p.notice}</StatusLine>
+      <StatusLine className={styles.statusSlot}>{p.notice}</StatusLine>
 
       <section className={styles.section} aria-labelledby="quizzes-title">
         <div className={styles.sectionHead}>

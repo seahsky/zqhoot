@@ -258,10 +258,10 @@ describe('reveal', () => {
     if (c.kind !== 'bars') throw new Error();
     expect(c.markCorrect).toBe(true);
     expect(c.rows.map((r) => [r.letter, r.label, r.count, r.percent, r.correct])).toEqual([
-      ['A', 'Mercury', 14, 47, true],
-      ['B', 'Venus', 9, 30, false],
-      ['C', 'Earth', 5, 17, false],
-      ['D', 'Mars', 2, 7, false],
+      ['A', 'Mercury', 10, 50, true],
+      ['B', 'Venus', 6, 30, false],
+      ['C', 'Earth', 3, 15, false],
+      ['D', 'Mars', 1, 5, false],
     ]);
     expect(c.summary).toContain('The correct answer is A Mercury');
   });
@@ -270,8 +270,8 @@ describe('reveal', () => {
     const c = chartOf(presenterView(stateFor(revealSnapshot(trueFalseQ, WALL_RESULT)), NOW));
     if (c.kind !== 'bars') throw new Error();
     expect(c.rows.map((r) => [r.label, r.count, r.correct])).toEqual([
-      ['True', 6, false],
-      ['False', 22, true],
+      ['True', 5, false],
+      ['False', 15, true],
     ]);
   });
 
@@ -313,9 +313,9 @@ describe('reveal', () => {
   it('rating: a histogram whose tallest bar is full height, and the average', () => {
     const c = chartOf(presenterView(stateFor(revealSnapshot(ratingQ, RATING_RESULT)), NOW));
     if (c.kind !== 'rating') throw new Error();
-    expect(c.bars.map((b) => b.count)).toEqual([1, 2, 6, 11, 7]);
+    expect(c.bars.map((b) => b.count)).toEqual([1, 2, 5, 8, 5]);
     expect(Math.max(...c.bars.map((b) => b.height))).toBe(1);
-    expect(c.summary).toBe('Average 3.8 of 5 from 27 ratings.');
+    expect(c.summary).toBe('Average 3.7 of 5 from 21 ratings.');
   });
 
   it('every chart has a table alternative and a one-sentence summary', () => {

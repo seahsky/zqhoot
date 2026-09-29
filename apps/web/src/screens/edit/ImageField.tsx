@@ -1,6 +1,8 @@
-import { useId, useRef } from 'react';
+import { useId, useRef, useState } from 'react';
 import { IMAGE_CONTENT_TYPES } from '@zqhoot/protocol';
+import buttonStyles from '../../ui/Button.module.css';
 import { Button } from '../../ui/Button.tsx';
+import { cx } from '../../ui/cx.ts';
 import fieldStyles from '../../ui/TextField.module.css';
 import styles from './Editor.module.css';
 
@@ -23,6 +25,10 @@ const ACCEPT = IMAGE_CONTENT_TYPES.join(',');
 /**
  * Picks a picture for a question. The browser is only asked for PNG, JPEG, WebP or GIF, and the
  * upload code refuses anything else (and files over 5 MB) before it asks the server for a grant.
+ *
+ * The native file input is visually hidden, not removed: it keeps keyboard focus and its label,
+ * and a label styled as a button opens it. That also drops the native "No file chosen" text,
+ * which contradicted the picture beside it.
  */
 export function ImageField({
   fieldId,
@@ -35,6 +41,7 @@ export function ImageField({
 }: ImageFieldProps) {
   const uid = useId();
   const input = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState('');
   const hintId = `${uid}-hint`;
   const errorId = `${uid}-error`;
   return (
@@ -50,7 +57,7 @@ export function ImageField({
           <img src={urlFor(imageKey)} alt="Preview of this question's image" />
         </div>
       )}
-      <div className={styles.row}>
+      <div className={styles.imageActions}>
         <input
           ref={input}
           id={`${uid}-file`}
@@ -63,17 +70,38 @@ export function ImageField({
             const file = e.target.files?.[0];
             // Reset so choosing the same file again (after a refusal) still fires a change.
             if (input.current) input.current.value = '';
-            if (file) onFile(file);
+            if (file) {
+              setFileName(file.name);
+              onFile(file);
+            }
           }}
         />
+        <label
+          htmlFor={`${uid}-file`}
+          className={cx(
+            buttonStyles.button,
+            buttonStyles.secondary,
+            buttonStyles.compact,
+            styles.fileButton,
+            styles.tall,
+          )}
+        >
+          {imageKey ? 'Replace image' : 'Choose image'}
+        </label>
         {imageKey && (
-          <Button size="compact" variant="secondary" onClick={onRemove} disabled={uploading}>
+          <Button
+            size="compact"
+            variant="secondary"
+            className={styles.tall}
+            onClick={onRemove}
+            disabled={uploading}
+          >
             Remove image
           </Button>
         )}
       </div>
       <p role="status" className={styles.status}>
-        {uploading ? 'Uploading…' : ''}
+        {uploading ? (fileName ? `Uploading ${fileName}…` : 'Uploading…') : ''}
       </p>
       {error && (
         <p id={errorId} role="alert" className={fieldStyles.error}>
