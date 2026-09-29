@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@zqhoot/engine": "workspace:*",
-    "@zqhoot/protocol": "workspace:*"
+    "@zqhoot/protocol": "workspace:*",
+    "@aws-sdk/client-dynamodb": "3.1142.0",
+    "@aws-sdk/lib-dynamodb": "3.1142.0"
   }
 }

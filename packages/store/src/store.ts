@@ -45,6 +45,8 @@ export interface Store {
   // --- Sessions --------------------------------------------------------------------
   /** Atomically claim a PIN for a session. False if another live session holds it. */
   reservePin(pin: string, sessionId: string, expiresAt: number): Promise<boolean>;
+  /** Delete the PIN claim if it is held by `sessionId`; no-op otherwise. */
+  releasePin(pin: string, sessionId: string): Promise<void>;
   getSessionIdByPin(pin: string): Promise<string | null>;
   /** Writes meta and the immutable snapshot. Fails with ConflictError if the session exists. */
   createSession(meta: SessionMeta, snapshot: QuizSnapshot): Promise<void>;

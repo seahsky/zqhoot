@@ -257,3 +257,31 @@ export type OutboundMessage = ServerMessage extends infer M
     ? Omit<M, 'ts'>
     : never
   : never;
+
+// Inferred types for each message schema.
+export type JoinMsg = z.infer<typeof JoinMsg>;
+export type ResumeMsg = z.infer<typeof ResumeMsg>;
+export type HostHelloMsg = z.infer<typeof HostHelloMsg>;
+export type AnswerMsg = z.infer<typeof AnswerMsg>;
+export type PingMsg = z.infer<typeof PingMsg>;
+export type LeaveMsg = z.infer<typeof LeaveMsg>;
+export type HostNextMsg = z.infer<typeof HostNextMsg>;
+export type HostCloseMsg = z.infer<typeof HostCloseMsg>;
+export type HostSkipMsg = z.infer<typeof HostSkipMsg>;
+export type HostEndMsg = z.infer<typeof HostEndMsg>;
+export type HostKickMsg = z.infer<typeof HostKickMsg>;
+export type HostLockMsg = z.infer<typeof HostLockMsg>;
+export type HostModerateMsg = z.infer<typeof HostModerateMsg>;
+export type HostStatsMsg = z.infer<typeof HostStatsMsg>;
+export type WelcomeMsg = z.infer<typeof WelcomeMsg>;
+export type ErrorMsg = z.infer<typeof ErrorMsg>;
+export type PongMsg = z.infer<typeof PongMsg>;
+export type HostStateMsg = z.infer<typeof HostStateMsg>;
+export type RosterMsg = z.infer<typeof RosterMsg>;
+export type StatsMsg = z.infer<typeof StatsMsg>;
+export type QuestionMsg = z.infer<typeof QuestionMsg>;
+export type AnswerAckMsg = z.infer<typeof AnswerAckMsg>;
+export type RevealMsg = z.infer<typeof RevealMsg>;
+export type LeaderboardMsg = z.infer<typeof LeaderboardMsg>;
+export type EndedMsg = z.infer<typeof EndedMsg>;
+export type KickedMsg = z.infer<typeof KickedMsg>;

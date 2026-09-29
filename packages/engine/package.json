@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@zqhoot/protocol": "workspace:*"
+    "@zqhoot/protocol": "workspace:*",
+    "obscenity": "0.4.6"
   }
 }
