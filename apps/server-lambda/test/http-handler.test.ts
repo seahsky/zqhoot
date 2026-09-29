@@ -62,12 +62,18 @@ const context = { awsRequestId: 'req-1', functionName: 'zqhoot-http' } as Contex
 function v2Event(
   method: string,
   path: string,
-  opts: { sourceIp?: string; headers?: Record<string, string>; body?: unknown } = {},
+  opts: {
+    sourceIp?: string;
+    headers?: Record<string, string>;
+    body?: unknown;
+    /** What API Gateway puts there: the route that matched, `$default` when none was configured. */
+    routeKey?: string;
+  } = {},
 ): APIGatewayProxyEventV2 {
   const body = opts.body === undefined ? undefined : JSON.stringify(opts.body);
   return {
     version: '2.0',
-    routeKey: '$default',
+    routeKey: opts.routeKey ?? '$default',
     rawPath: path,
     rawQueryString: '',
     headers: {
@@ -88,7 +94,7 @@ function v2Event(
         userAgent: 'vitest',
       },
       requestId: 'r-1',
-      routeKey: '$default',
+      routeKey: opts.routeKey ?? '$default',
       stage: '$default',
       time: '29/Sep/2026:06:00:00 +0000',
       timeEpoch: Date.now(),
@@ -214,4 +220,119 @@ describe('http handler', () => {
     vi.stubEnv('ZQ_MEDIA_BUCKET', undefined);
     await expect(loadHandler()).rejects.toThrow(/ZQ_MEDIA_BUCKET/);
   });
+});
+
+describe('CORS through the Hono Lambda adapter', () => {
+  const SITE = 'https://quiz.example.com';
+  // The route Terraform declares for everything except GET /api/health; it takes OPTIONS too.
+  const routeKey = 'ANY /api/{proxy+}';
+
+  const preflight = (origin: string, path = '/api/quizzes') =>
+    v2Event('OPTIONS', path, {
+      routeKey,
+      headers: {
+        origin,
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type',
+      },
+    });
+  const corsHeaders = (result: APIGatewayProxyStructuredResultV2): string[] =>
+    Object.keys(result.headers ?? {}).filter((name) =>
+      name.toLowerCase().startsWith('access-control-'),
+    );
+
+  it('answers an API Gateway v2 OPTIONS preflight from the site with 204', async () => {
+    stubHttpEnv();
+    const handler = await loadHandler();
+    const result = await handler(preflight(SITE), context);
+    expect(result.statusCode).toBe(204);
+    expect(result.body ?? '').toBe('');
+    expect(result.headers).toMatchObject({
+      'access-control-allow-origin': SITE,
+      'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
+      'access-control-allow-headers': 'authorization,content-type',
+      'access-control-max-age': '86400',
+    });
+    expect(corsHeaders(result)).not.toContain('access-control-allow-credentials');
+  });
+
+  it('answers the preflight for every route the app serves, without a token', async () => {
+    stubHttpEnv();
+    const handler = await loadHandler();
+    const paths = [
+      '/api/health',
+      '/api/me',
+      '/api/join/123456',
+      '/api/quizzes',
+      '/api/quizzes/abcdef',
+      '/api/quizzes/abcdef/duplicate',
+      '/api/media/uploads',
+      '/api/sessions',
+      '/api/sessions/abcdef/results.csv',
+    ];
+    for (const path of paths) {
+      const result = await handler(preflight(SITE, path), context);
+      expect(result.statusCode, path).toBe(204);
+      expect(result.headers?.['access-control-allow-origin'], path).toBe(SITE);
+    }
+  });
+
+  it('gives another origin no CORS headers, on the preflight or on a request', async () => {
+    stubHttpEnv();
+    const handler = await loadHandler();
+    const pre = await handler(preflight('https://evil.example'), context);
+    expect(corsHeaders(pre)).toEqual([]);
+    const get = await handler(
+      v2Event('GET', '/api/health', {
+        routeKey: 'GET /api/health',
+        headers: { origin: 'https://evil.example' },
+      }),
+      context,
+    );
+    expect(get.statusCode).toBe(200);
+    expect(corsHeaders(get)).toEqual([]);
+  });
+
+  it('adds Allow-Origin and the exposed headers to a real request, errors included', async () => {
+    stubHttpEnv();
+    const handler = await loadHandler();
+    const ok = await handler(
+      v2Event('GET', '/api/health', { routeKey: 'GET /api/health', headers: { origin: SITE } }),
+      context,
+    );
+    expect(ok.statusCode).toBe(200);
+    expect(ok.headers).toMatchObject({
+      'access-control-allow-origin': SITE,
+      'access-control-expose-headers': 'content-disposition,retry-after,x-request-id',
+    });
+    const unauthorized = await handler(
+      v2Event('GET', '/api/me', { routeKey, headers: { origin: SITE } }),
+      context,
+    );
+    expect(unauthorized.statusCode).toBe(401);
+    expect(unauthorized.headers?.['access-control-allow-origin']).toBe(SITE);
+  });
+
+  it('allows the extra origins from ZQ_CORS_EXTRA_ORIGINS, and only those', async () => {
+    stubHttpEnv({
+      ZQ_CORS_EXTRA_ORIGINS: ' https://app.example.org , https://quiz.example.net:8443,',
+    });
+    const handler = await loadHandler();
+    for (const origin of [SITE, 'https://app.example.org', 'https://quiz.example.net:8443']) {
+      const result = await handler(preflight(origin), context);
+      expect(result.statusCode, origin).toBe(204);
+      expect(result.headers?.['access-control-allow-origin'], origin).toBe(origin);
+    }
+    for (const origin of ['https://example.org', 'https://quiz.example.net']) {
+      expect(corsHeaders(await handler(preflight(origin), context)), origin).toEqual([]);
+    }
+  });
+
+  it.each(['http://app.example.org', 'https://*.example.org', 'https://app.example.org/x', '*'])(
+    'refuses to start with the extra origin %s',
+    async (origin) => {
+      stubHttpEnv({ ZQ_CORS_EXTRA_ORIGINS: origin });
+      await expect(loadHandler()).rejects.toThrow(/ZQ_CORS_EXTRA_ORIGINS/);
+    },
+  );
 });

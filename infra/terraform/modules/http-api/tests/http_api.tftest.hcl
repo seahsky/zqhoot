@@ -41,7 +41,6 @@ variables {
   ws_function_arn    = "arn:aws:lambda:us-east-1:123456789012:function:t-ws"
   warm_concurrency   = 4
   log_retention_days = 14
-  allowed_origins    = ["https://d111111abcdef8.cloudfront.net"]
   environment = {
     ZQ_SITE_ORIGIN          = "https://d111111abcdef8.cloudfront.net"
     ZQ_COGNITO_USER_POOL_ID = "us-east-1_AbCdEfG"
@@ -192,48 +191,15 @@ run "api_routes_and_throttling" {
 }
 
 # The browser calls the API directly (not through CloudFront) so that sourceIp is the player's
-# address, which makes every call cross-origin.
-run "cors_allows_only_the_configured_site_origins" {
+# address, which makes every call cross-origin. The function answers CORS itself
+# (ZQ_SITE_ORIGIN, ZQ_CORS_EXTRA_ORIGINS): if API Gateway also had a cors_configuration it would
+# answer preflights without invoking the function and replace the function's CORS headers.
+run "api_gateway_adds_no_cors_of_its_own" {
   command = apply
 
   assert {
-    condition     = length(aws_apigatewayv2_api.this.cors_configuration) == 1
-    error_message = "the API must have exactly one cors_configuration"
-  }
-
-  assert {
-    condition     = jsonencode(output.allowed_origins) == jsonencode(["https://d111111abcdef8.cloudfront.net"])
-    error_message = "allow_origins must be exactly the site origin"
-  }
-
-  assert {
-    condition     = !anytrue([for o in one(aws_apigatewayv2_api.this.cors_configuration).allow_origins : strcontains(o, "*")])
-    error_message = "no wildcard origin"
-  }
-
-  assert {
-    condition     = jsonencode(sort(tolist(one(aws_apigatewayv2_api.this.cors_configuration).allow_methods))) == jsonencode(["DELETE", "GET", "OPTIONS", "POST", "PUT"])
-    error_message = "allow_methods must be GET, POST, PUT, DELETE, OPTIONS"
-  }
-
-  assert {
-    condition     = jsonencode(sort(tolist(one(aws_apigatewayv2_api.this.cors_configuration).allow_headers))) == jsonencode(["authorization", "content-type"])
-    error_message = "allow_headers must be authorization and content-type"
-  }
-
-  assert {
-    condition     = jsonencode(sort(tolist(one(aws_apigatewayv2_api.this.cors_configuration).expose_headers))) == jsonencode(["content-disposition"])
-    error_message = "expose_headers must be content-disposition (the CSV download's file name)"
-  }
-
-  assert {
-    condition     = one(aws_apigatewayv2_api.this.cors_configuration).max_age == 86400
-    error_message = "preflight responses are cacheable for the API Gateway maximum, 86400 s"
-  }
-
-  assert {
-    condition     = one(aws_apigatewayv2_api.this.cors_configuration).allow_credentials == false
-    error_message = "bearer tokens, no cookies: credentialed CORS must stay off"
+    condition     = length(aws_apigatewayv2_api.this.cors_configuration) == 0
+    error_message = "the API must have no cors_configuration: the function answers CORS, and API Gateway would override it"
   }
 
   # The default execute-api endpoint is the only way in, so it must not be disabled.
@@ -241,65 +207,54 @@ run "cors_allows_only_the_configured_site_origins" {
     condition     = aws_apigatewayv2_api.this.disable_execute_api_endpoint == false
     error_message = "the default execute-api endpoint must stay enabled"
   }
+}
 
-  # API Gateway answers preflight itself once CORS is configured, so no OPTIONS route is declared.
+# Preflight is an OPTIONS request. ANY includes it, and every path the app serves
+# (packages/service http-app.ts: /api/health, /api/join/{pin}, /api/auth/login, /api/me,
+# /api/quizzes..., /api/media/..., /api/sessions...) has a segment after /api/, so one proxy route
+# covers all of them. A route that named methods without OPTIONS would break every preflight.
+run "options_requests_reach_the_function" {
+  command = apply
+
   assert {
-    condition     = !strcontains(aws_apigatewayv2_route.api.route_key, "OPTIONS") && !strcontains(aws_apigatewayv2_route.health.route_key, "OPTIONS")
-    error_message = "no OPTIONS route: API Gateway handles preflight when CORS is configured"
+    condition     = aws_apigatewayv2_route.api.route_key == "ANY /api/{proxy+}"
+    error_message = "ANY /api/{proxy+} is what sends preflight OPTIONS requests to the function"
+  }
+
+  assert {
+    condition     = aws_apigatewayv2_route.api.target == "integrations/${aws_apigatewayv2_integration.lambda.id}" && aws_apigatewayv2_route.health.target == aws_apigatewayv2_route.api.target
+    error_message = "every route must target the Lambda integration"
+  }
+
+  # There is no $default route: a path outside /api gets API Gateway's own 404.
+  assert {
+    condition     = jsonencode([aws_apigatewayv2_route.api.route_key, aws_apigatewayv2_route.health.route_key]) == jsonencode(["ANY /api/{proxy+}", "GET /api/health"])
+    error_message = "the only routes are ANY /api/{proxy+} and GET /api/health"
+  }
+
+  assert {
+    condition     = !strcontains(aws_apigatewayv2_route.health.route_key, "OPTIONS") && !strcontains(aws_apigatewayv2_route.api.route_key, "OPTIONS")
+    error_message = "no route names OPTIONS: ANY covers it"
   }
 }
 
-run "several_origins_are_allowed_exactly" {
+run "the_site_origins_reach_the_function_through_its_environment" {
   command = apply
 
   variables {
-    allowed_origins = ["https://quiz.example.com", "https://d111111abcdef8.cloudfront.net"]
+    environment = {
+      ZQ_SITE_ORIGIN          = "https://quiz.example.com"
+      ZQ_CORS_EXTRA_ORIGINS   = "https://d111111abcdef8.cloudfront.net,https://app.example.org"
+      ZQ_COGNITO_USER_POOL_ID = "us-east-1_AbCdEfG"
+      ZQ_COGNITO_CLIENT_ID    = "client"
+      ZQ_SESSION_TTL_DAYS     = "30"
+    }
   }
 
   assert {
-    condition     = jsonencode(output.allowed_origins) == jsonencode(["https://d111111abcdef8.cloudfront.net", "https://quiz.example.com"])
-    error_message = "every configured origin, and only those, must be allowed"
+    condition     = aws_lambda_function.this.environment[0].variables["ZQ_SITE_ORIGIN"] == "https://quiz.example.com" && aws_lambda_function.this.environment[0].variables["ZQ_CORS_EXTRA_ORIGINS"] == "https://d111111abcdef8.cloudfront.net,https://app.example.org"
+    error_message = "ZQ_SITE_ORIGIN and ZQ_CORS_EXTRA_ORIGINS are the function's CORS allow-list and must be passed through unchanged"
   }
-}
-
-run "a_wildcard_origin_is_rejected" {
-  command = plan
-
-  variables {
-    allowed_origins = ["*"]
-  }
-
-  expect_failures = [var.allowed_origins]
-}
-
-run "a_wildcard_subdomain_origin_is_rejected" {
-  command = plan
-
-  variables {
-    allowed_origins = ["https://*.example.com"]
-  }
-
-  expect_failures = [var.allowed_origins]
-}
-
-run "an_origin_with_a_trailing_slash_is_rejected" {
-  command = plan
-
-  variables {
-    allowed_origins = ["https://quiz.example.com/"]
-  }
-
-  expect_failures = [var.allowed_origins]
-}
-
-run "no_origins_is_rejected" {
-  command = plan
-
-  variables {
-    allowed_origins = []
-  }
-
-  expect_failures = [var.allowed_origins]
 }
 
 run "missing_package_fails_plan_with_a_precondition" {

@@ -7,9 +7,10 @@ locals {
   # browser blocks the upload.
   media_upload_origin = "https://${var.media_bucket_regional_domain_name}"
 
-  # ADR-0013, plus api_origin in connect-src (the browser calls the HTTP API directly, ADR-0002) and
-  # media_upload_origin in connect-src and form-action: without it the browser blocks every image
-  # upload, whether the web app sends it with fetch/XHR or a form submit.
+  # ADR-0013, plus api_origin in connect-src (the API's exact origin, never a wildcard: the browser
+  # calls the HTTP API directly, ADR-0002) and media_upload_origin in connect-src and form-action:
+  # without it the browser blocks every image upload, whether the web app sends it with fetch/XHR
+  # or a form submit.
   content_security_policy = join("; ", [
     "default-src 'self'",
     "connect-src 'self' ${var.api_origin} ${var.ws_url} ${var.cognito_domain} ${local.media_upload_origin}",

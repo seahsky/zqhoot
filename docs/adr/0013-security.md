@@ -1,6 +1,6 @@
 # ADR-0013: Security
 
-Status: accepted (2026-09-29); CORS and CSP `connect-src` amended (2026-09-29, wave 1 gate finding G6)
+Status: accepted (2026-09-29); CORS and CSP `connect-src` amended (2026-09-29, wave 1 gate finding G6); CORS moved into the app and the CSP `connect-src` narrowed to the exact API origin (2026-09-29, G4)
 
 ## Decision
 
@@ -28,14 +28,15 @@ There are no per-IP join caps: a class behind one NAT can legitimately join 400 
 ### Transport and headers
 
 - **WebSocket `Origin` check:** `$connect` (AWS) and the upgrade handler (VM) reject an `Origin` that isn't the configured site origin. This blocks cross-site WebSocket hijacking with host credentials.
-- **CORS allow-list (AWS):** the browser calls the HTTP API directly at its `execute-api` endpoint, so every call is cross-origin ([ADR-0002](0002-realtime-transport.md)). The API's CORS configuration allows only the site origin (the CloudFront domain, or the custom domain when one is set): never `*`, and exact origins rather than patterns.
-  - Methods `GET, POST, PUT, DELETE, OPTIONS`; request headers `authorization` and `content-type`; exposed header `content-disposition` (the results CSV's file name); preflight cached for 86400 s.
-  - No credentials (`allow_credentials` false): hosts send a bearer token in `Authorization`, and no cookie is ever used. The web client must not send `credentials: 'include'`.
+- **CORS allow-list (AWS):** the browser calls the HTTP API directly at its `execute-api` endpoint, so every call is cross-origin ([ADR-0002](0002-realtime-transport.md)). **The app answers CORS, not API Gateway:** the http Lambda applies Hono's `cors` middleware to `/api/*` (`createHttpApp`'s optional `cors: { origins }` dependency), and the HTTP API has no `cors_configuration`. It allows only the site origin (`ZQ_SITE_ORIGIN`: the CloudFront domain, or the custom domain when one is set) plus any origins in the optional `ZQ_CORS_EXTRA_ORIGINS` (comma-separated, each an exact `https://host` origin): never `*`, and exact string matches rather than patterns. Any other `Origin` gets no `Access-Control-*` header at all.
+  - Methods `GET, POST, PUT, DELETE, OPTIONS`; request headers `authorization` and `content-type`; exposed headers `content-disposition` (the results CSV's file name), `retry-after` (so a rate-limited client can read the wait) and `x-request-id`; preflight cached for 86400 s (`Access-Control-Max-Age`; browsers cap it lower).
+  - No credentials (`Access-Control-Allow-Credentials` is never sent): hosts send a bearer token in `Authorization`, and no cookie is ever used. The web client must not send `credentials: 'include'`.
   - CORS is not authentication. Every route still validates its input and host routes still verify the JWT; the allow-list only decides which sites' scripts may read responses in a browser.
-  - The VM serves the app and the API from one origin, so it needs no CORS.
+  - The VM serves the app and the API from one origin, so it needs no CORS: `createHttpApp` gets no `cors` dependency there.
+  - Why the app and not API Gateway: an API Gateway CORS configuration needs the site URL, so the API resource would depend on the CloudFront distribution and the distribution's CSP could not name the API's host (a Terraform cycle). An earlier revision broke the cycle with a Region-wide wildcard over the `execute-api` hosts in `connect-src`, which let a script already running on the page talk to any API Gateway API in the Region; that is gone. The Lambda already receives the site origin in its environment without a cycle. With API Gateway adding no CORS headers (it would also discard the function's), the API resource is independent and the CSP names it exactly. The preflight now invokes the function (`ANY /api/{proxy+}` includes `OPTIONS`), which browsers cache.
 - **CloudFront response headers policy / Caddy:**
   - `Content-Security-Policy: default-src 'self'; connect-src 'self' {apiOrigin} {wsUrl} {cognitoDomain} {mediaUploadOrigin}; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' {cognitoDomain} {mediaUploadOrigin}`. On the VM `{apiOrigin}` and `{mediaUploadOrigin}` are absent (same-origin API and media).
-  - `{apiOrigin}` is the HTTP API's host, needed because the browser calls it directly. In the Terraform stack it is `https://*.execute-api.{region}.amazonaws.com` rather than the exact host: the API's CORS allow-list needs the site URL and the distribution's CSP would need the API's host, a dependency cycle. The wildcard lets a script that already runs on the page reach other `execute-api` APIs in the Region; `default-src 'self'` still blocks third-party scripts.
+  - `{apiOrigin}` is the HTTP API's exact origin (`https://{api id}.execute-api.{region}.amazonaws.com`), needed because the browser calls it directly. It is never a wildcard: the Terraform module rejects one, and a test asserts that no `*` appears anywhere in the CSP.
   - `{mediaUploadOrigin}` is the media bucket's regional S3 endpoint (`https://{bucket}.s3.{region}.amazonaws.com`), where the browser posts presigned uploads ([ADR-0011](0011-media.md)).
   - HSTS (1 year), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
 - TLS everywhere: CloudFront and API Gateway on AWS, Caddy on the VM.

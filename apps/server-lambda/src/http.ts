@@ -46,6 +46,9 @@ const app = createHttpApp({
   engine: engineConfig(config),
   info: { target: 'aws', version: VERSION },
   clientIp: apiGatewayClientIp,
+  // API Gateway adds no CORS headers of its own: the API has no `cors_configuration`, so it passes
+  // these through (infra/terraform/modules/http-api).
+  cors: { origins: config.corsOrigins },
 });
 
 export const handler = handle(app);

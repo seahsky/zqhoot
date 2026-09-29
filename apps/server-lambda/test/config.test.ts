@@ -45,6 +45,7 @@ describe('environment contract (docs/tasks/W1-infra.md)', () => {
 
   // Optional and never set by Terraform: local endpoints, and the emulator's local auth.
   const extras = [
+    'ZQ_CORS_EXTRA_ORIGINS',
     'ZQ_DDB_ENDPOINT',
     'ZQ_LAMBDA_ENDPOINT',
     'ZQ_AUTH_MODE',
@@ -165,6 +166,49 @@ describe('loadHttpConfig', () => {
       warmConcurrency: 4,
       lambdaEndpoint: undefined,
     });
+  });
+
+  it('allows CORS from the site origin only by default', () => {
+    expect(loadHttpConfig(httpEnv).corsOrigins).toEqual(['https://d111111abcdef8.cloudfront.net']);
+    expect(loadHttpConfig({ ...httpEnv, ZQ_CORS_EXTRA_ORIGINS: '' }).corsOrigins).toEqual([
+      'https://d111111abcdef8.cloudfront.net',
+    ]);
+  });
+
+  it('adds the origins of ZQ_CORS_EXTRA_ORIGINS after the site origin, without duplicates', () => {
+    const cfg = loadHttpConfig({
+      ...httpEnv,
+      ZQ_CORS_EXTRA_ORIGINS:
+        'https://quiz.example.com, https://d111111abcdef8.cloudfront.net,https://quiz.example.com,,',
+    });
+    expect(cfg.corsOrigins).toEqual([
+      'https://d111111abcdef8.cloudfront.net',
+      'https://quiz.example.com',
+    ]);
+  });
+
+  it.each([
+    'quiz.example.com',
+    'http://quiz.example.com',
+    'https://quiz.example.com/',
+    'https://quiz.example.com/app',
+    'https://*.example.com',
+    'https://quiz.example.com:443',
+    'https://Quiz.Example.com',
+    'https://a.example.com https://b.example.com',
+    'null',
+    '*',
+  ])('rejects the extra CORS origin %j', (origin) => {
+    expect(() => loadHttpConfig({ ...httpEnv, ZQ_CORS_EXTRA_ORIGINS: origin })).toThrow(
+      /ZQ_CORS_EXTRA_ORIGINS/,
+    );
+  });
+
+  it('reports a bad extra origin next to other problems', () => {
+    const { ZQ_MEDIA_BUCKET: _bucket, ...noBucket } = httpEnv;
+    expect(() => loadHttpConfig({ ...noBucket, ZQ_CORS_EXTRA_ORIGINS: 'nope' })).toThrow(
+      /ZQ_CORS_EXTRA_ORIGINS[\s\S]*ZQ_MEDIA_BUCKET|ZQ_MEDIA_BUCKET[\s\S]*ZQ_CORS_EXTRA_ORIGINS/,
+    );
   });
 
   it('rejects a non-numeric warm concurrency', () => {

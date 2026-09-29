@@ -45,6 +45,8 @@ export interface WsConfig extends BaseConfig {
 }
 
 export interface HttpConfig extends BaseConfig {
+  /** Origins the API answers CORS for: `siteOrigin` first, then `ZQ_CORS_EXTRA_ORIGINS`. */
+  corsOrigins: string[];
   mediaBucket: string;
   wsFunctionName: string;
   warmConcurrency: number;
@@ -81,6 +83,25 @@ const Origin = z
   .string()
   .refine(isOrigin, 'must be an origin without a path or trailing slash, e.g. https://example.com');
 
+/** Comma-separated exact `https://host[:port]` origins: no path, no wildcard, no `null`. */
+const ExtraOrigins = z.string().transform((raw, ctx) => {
+  const origins: string[] = [];
+  for (const part of raw.split(',')) {
+    const value = part.trim();
+    if (value === '') continue;
+    if (value.includes('*') || !value.startsWith('https://') || !isOrigin(value)) {
+      ctx.issues.push({
+        code: 'custom',
+        message: `"${value}" must be an exact https origin such as https://quiz.example.com`,
+        input: raw,
+      });
+      return z.NEVER;
+    }
+    origins.push(value);
+  }
+  return origins;
+});
+
 const baseShape = {
   ZQ_TARGET: z.literal('aws'),
   ZQ_TABLE_NAME: z.string().min(3).max(255),
@@ -104,6 +125,7 @@ const WsEnv = z.object({
 
 const HttpEnv = z.object({
   ...baseShape,
+  ZQ_CORS_EXTRA_ORIGINS: ExtraOrigins.optional(),
   ZQ_MEDIA_BUCKET: z.string().min(3).max(63),
   ZQ_WS_FUNCTION_NAME: z.string().min(1).max(140),
   ZQ_WARM_CONCURRENCY: z.coerce.number().int().min(0).max(50).default(4),
@@ -187,8 +209,10 @@ export function loadWsConfig(env: Env): WsConfig {
 /** Environment of the `http` function. Throws `ConfigError` listing every problem. */
 export function loadHttpConfig(env: Env): HttpConfig {
   const parsed = parseEnv(HttpEnv, env);
+  const base = baseConfig(parsed, env);
   return {
-    ...baseConfig(parsed, env),
+    ...base,
+    corsOrigins: [...new Set([base.siteOrigin, ...(parsed.ZQ_CORS_EXTRA_ORIGINS ?? [])])],
     mediaBucket: parsed.ZQ_MEDIA_BUCKET,
     wsFunctionName: parsed.ZQ_WS_FUNCTION_NAME,
     warmConcurrency: parsed.ZQ_WARM_CONCURRENCY,

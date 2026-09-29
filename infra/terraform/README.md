@@ -18,7 +18,7 @@ infra/terraform/
   modules/
     data/                 DynamoDB single table, private media bucket
     auth/                 Cognito user pool, hosted domain, public app client, optional first host
-    http-api/             Lambda "http" + API Gateway HTTP API (called directly by the browser, CORS)
+    http-api/             Lambda "http" + API Gateway HTTP API (called directly by the browser; the Lambda answers CORS)
     realtime-ws/          Lambda "ws" + API Gateway WebSocket API
     static-site/          Private site bucket + CloudFront (site and /media/*, no API)
     vm/                   One Ubuntu 24.04 EC2 instance running the Docker Compose stack
@@ -43,12 +43,13 @@ realtime-ws ──── ws function name/ARN ─────────► htt
 realtime-ws ──── wss URL ──────────────────────► static-site (CSP connect-src)
 auth ─────────── Cognito domain ───────────────► static-site (CSP connect-src, form-action)
 auth ─────────── pool ID, client ID ───────────► http-api, realtime-ws (Lambda environment)
-static-site ──── site URL ─────────────────────► http-api (CORS allow_origins, ZQ_SITE_ORIGIN)
+static-site ──── site URL ─────────────────────► http-api (ZQ_SITE_ORIGIN: the origin the function answers CORS for)
                                                ► realtime-ws (ZQ_SITE_ORIGIN, Origin check)
                                                ► data (media bucket CORS)
                                                ► auth (callback and logout URLs)
                                                ► env (config.json in the site bucket)
-http-api ─────── invoke URL ───────────────────► env (config.json apiBaseUrl)
+http-api ─────── invoke URL (exact API origin) ► static-site (CSP connect-src)
+                                               ► env (config.json apiBaseUrl)
 ```
 
 The browser reaches three places: CloudFront (the app and `/media/*`), the WebSocket API and the
@@ -56,20 +57,28 @@ HTTP API, the last two directly. The HTTP API is **not** behind CloudFront
 ([ADR-0002](../../docs/adr/0002-realtime-transport.md)): through CloudFront the function would see
 an edge address as `sourceIp` and the per-IP limits of
 [ADR-0013](../../docs/adr/0013-security.md) would count edges, not players. Calling it directly makes
-the calls cross-origin, hence the CORS allow-list (exactly the site origin, never `*`) and the API's
-entry in the CSP `connect-src`. `config.json`'s `apiBaseUrl` is the API's invoke URL.
+the calls cross-origin, so the **function itself answers CORS**: the http Lambda allows exactly the
+site origin (`ZQ_SITE_ORIGIN`, plus any `ZQ_CORS_EXTRA_ORIGINS`), never `*`, and handles the
+preflight `OPTIONS` requests that the `ANY /api/{proxy+}` route sends it. The API has **no
+`cors_configuration`**: with one, API Gateway would answer preflights itself and discard the CORS
+headers the function sets. CloudFront's CSP `connect-src` names the API's exact host, and
+`config.json`'s `apiBaseUrl` is the API's invoke URL.
 
-The site URL feeds back into the Lambda environments, the Cognito client and the HTTP API's CORS
-allow-list, while CloudFront needs the WebSocket URL and the Cognito domain. That is only acyclic
-because those two values come from resources that do not depend on the site URL: the WebSocket URL
-is built from the API and the stage name, and the Cognito domain does not depend on the app client.
-The HTTP API is deliberately **not** an input to CloudFront: its CORS allow-list needs the site URL,
-so giving CloudFront its host would be a cycle (`terraform validate` reports it). CloudFront's CSP
-therefore allows the Region's `execute-api` hosts with a wildcard rather than the API's own host (see
-[static-site](modules/static-site/README.md)). `aws_apigatewayv2_api` still does not depend on its
-Lambda (the integration, routes and permission do). The media bucket's CORS rule and both bucket
-policies are separate resources for the same reason. `terraform validate` fails on a cycle, and the
-environment test applies the whole composition against a mock provider.
+The site URL feeds back into the Lambda environments and the Cognito client, while CloudFront needs
+the HTTP API's host, the WebSocket URL and the Cognito domain. That is only acyclic because those
+values come from resources that do not depend on the site URL: the HTTP API resource has no CORS
+configuration (so it does not need the site URL; that is why CORS lives in the function), the
+WebSocket URL is built from the API and the stage name, and the Cognito domain does not depend on
+the app client. `aws_apigatewayv2_api` also does not depend on its Lambda (the integration, routes
+and permission do). The media bucket's CORS rule and both bucket policies are separate resources for
+the same reason. `terraform validate` fails on a cycle, and the environment test applies the whole
+composition against a mock provider.
+
+To let another origin call the API as well (for example both a custom domain and the `*.cloudfront.net`
+name), set `ZQ_CORS_EXTRA_ORIGINS` (comma-separated exact `https://host` origins) in the http
+function's environment. No variable exposes it: edit the `environment` passed to the `http_api`
+module in `envs/aws-serverless/main.tf`. The ws function's Origin check only accepts
+`ZQ_SITE_ORIGIN`, so a page served from an extra origin can call the API but not open the WebSocket.
 
 ## Prerequisites
 
@@ -283,11 +292,11 @@ The `tests/` files use `mock_provider "aws"`, so they run offline. They assert, 
 the DynamoDB table matches `tableDefinition()` in `packages/store` (keys, `gsi1`, TTL, on-demand),
 the IAM policies contain no wildcard actions and no bare `*` resource, the Lambda environment is
 exactly the variable set the wave 2 build reads (module by module, and as wired by the serverless
-environment), the CSP matches ADR-0013 plus the API and media upload origins, the bucket policies
-admit only the distribution, CloudFront has no `/api/*` behaviour and no API origin, the HTTP API's
-CORS configuration allows exactly the site origin(s) (no `*`, no credentials) and `config.json`'s
-`apiBaseUrl` is the API endpoint, `config.json` has the shape of `RuntimeConfig`, and the VM's
-`user_data` contains no secret names.
+environment), the CSP matches ADR-0013 plus the exact API host and the media upload origin (no `*`
+anywhere in it), the bucket policies admit only the distribution, CloudFront has no `/api/*`
+behaviour and no API origin, the HTTP API has no `cors_configuration` and an `ANY /api/{proxy+}`
+route (so the function receives preflights), `config.json`'s `apiBaseUrl` is the API endpoint,
+`config.json` has the shape of `RuntimeConfig`, and the VM's `user_data` contains no secret names.
 
 ## What was verified
 
@@ -322,9 +331,11 @@ network route to `registry.terraform.io`):
 **Not verified** (needs a real account):
 
 - A CORS preflight and a real call from the site to a deployed HTTP API, and that the Lambda sees
-  the caller's own address as `requestContext.http.sourceIp`. The CORS arguments were read from the
-  provider schema, and "API Gateway answers preflight itself when CORS is configured" is from the
-  API Gateway documentation, not observed. Nor was the CSP wildcard tried in a browser.
+  the caller's own address as `requestContext.http.sourceIp`. That an API without
+  `cors_configuration` passes the function's `OPTIONS` response and CORS headers through, and that
+  `ANY /api/{proxy+}` matches `OPTIONS`, is from the API Gateway documentation, not observed. What
+  is tested is the function's side: a preflight through the Hono Lambda adapter with an API Gateway
+  v2 `OPTIONS` event (`apps/server-lambda`). Nor was the CSP tried in a browser.
 - `terraform plan` and `apply` against AWS: provider-side validation and API behaviour are
   untested. Points most likely to need a tweak: WebSocket stage `auto_deploy` (documented as
   supported by API Gateway v2 for both protocols, not confirmed against WebSocket in practice),
@@ -360,14 +371,16 @@ network route to `registry.terraform.io`):
   suffix (`bucket_prefix`), so they are globally unique without looking up the account ID.
 - **`aws_s3_object.config` owns `config.json`;** the deploy script never uploads it.
 - **The HTTP API is called directly, not through CloudFront** (G3, ADR-0002). CloudFront has no
-  `/api/*` behaviour and no API origin; the API has a CORS allow-list of exactly the site origin,
-  and `config.json`'s `apiBaseUrl` is the API's invoke URL. Reason: behind CloudFront the Lambda sees
-  an edge address, and forwarding the viewer's address would need a custom origin request policy
-  and a trust rule we cannot verify without an AWS account.
-- **The API's CSP `connect-src` entry is a Region-wide `execute-api` wildcard**, not the API's own
-  host. The exact host would put the API and the distribution in a dependency cycle (CORS needs the
-  site URL, the site URL needs the distribution, the distribution's CSP would need the API). The
-  trade-off is described in [static-site](modules/static-site/README.md).
+  `/api/*` behaviour and no API origin, and `config.json`'s `apiBaseUrl` is the API's invoke URL.
+  Reason: behind CloudFront the Lambda sees an edge address, and forwarding the viewer's address
+  would need a custom origin request policy and a trust rule we cannot verify without an AWS account.
+- **The function answers CORS, not API Gateway** (G4, ADR-0013). The API has no `cors_configuration`,
+  so the API resource does not depend on the site URL and the CSP `connect-src` can name the API's
+  exact host instead of a Region-wide `execute-api` wildcard (G3 had to use the wildcard to avoid a
+  dependency cycle, which let an injected script reach any API Gateway API in the Region). The price
+  is that API Gateway no longer answers preflights without invoking the function: each one is a
+  short Lambda invocation (the response carries `Access-Control-Max-Age: 86400`; browsers cap that
+  lower, so a client repeats it every few hours at most).
 - **The CSP also allows the media upload origin.** ADR-0011 uploads media by S3 presigned POST
   straight from the browser to the media bucket, which `connect-src` and `form-action` would
   otherwise block, so the CloudFront policy allows

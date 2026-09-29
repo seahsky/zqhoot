@@ -14,7 +14,10 @@ export interface EmulatorConfig {
   stage: string;
   ddbEndpoint: string;
   tableName: string;
-  /** Overrides `ZQ_SITE_ORIGIN`, the only Origin `$connect` accepts. */
+  /**
+   * Overrides `ZQ_SITE_ORIGIN`, the only Origin `$connect` accepts and the origin the http handler
+   * answers CORS for. Unset, it is the emulator's own web origin.
+   */
   siteOrigin: string | undefined;
   webDist: string;
   /** Directory holding `ws/index.mjs` and `http/index.mjs` (the build output). */

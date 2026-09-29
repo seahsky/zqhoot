@@ -214,27 +214,35 @@ run "wires_the_lambda_environments" {
   }
 }
 
-# The API is called cross-origin, so its CORS allow-list must be exactly the site's origin and its
-# CSP connect-src must let the page reach the API.
-run "cross_origin_api_calls_are_allowed_from_the_site_only" {
+# The API is called cross-origin. The http function answers CORS for ZQ_SITE_ORIGIN (API Gateway has
+# no cors_configuration, so the API resource does not depend on the site URL), which lets the CSP
+# connect-src name the API's exact host. That this composes at all is the cycle check: the site URL
+# feeds the functions, and the API's host feeds the distribution.
+run "the_csp_names_the_exact_api_host_and_the_function_answers_cors_for_the_site" {
   command = apply
-
-  assert {
-    condition     = jsonencode(module.http_api.allowed_origins) == jsonencode(["https://d111111abcdef8.cloudfront.net"])
-    error_message = "CORS allow_origins must be exactly the site origin"
-  }
-
-  assert {
-    condition     = !anytrue([for o in module.http_api.allowed_origins : strcontains(o, "*")])
-    error_message = "no wildcard CORS origin"
-  }
 
   assert {
     condition = anytrue([
       for part in split("; ", module.static_site.content_security_policy) :
-      startswith(part, "connect-src ") && contains(split(" ", part), "https://*.execute-api.us-east-1.amazonaws.com")
+      startswith(part, "connect-src ") && contains(split(" ", part), "https://httpapi1.execute-api.us-east-1.amazonaws.com")
     ])
-    error_message = "the CSP connect-src must allow the execute-api hosts of the deployment's Region"
+    error_message = "the CSP connect-src must name the HTTP API's exact host"
+  }
+
+  assert {
+    condition     = !strcontains(module.static_site.content_security_policy, "*")
+    error_message = "no wildcard anywhere in the CSP: it would let a script on the page reach other API Gateway APIs"
+  }
+
+  # The host in the CSP, the one in config.json and the API's own endpoint are one and the same.
+  assert {
+    condition     = jsondecode(aws_s3_object.config.content).apiBaseUrl == module.http_api.api_endpoint && strcontains(module.static_site.content_security_policy, "connect-src 'self' ${module.http_api.api_endpoint} ")
+    error_message = "the CSP and config.json must use the API's endpoint"
+  }
+
+  assert {
+    condition     = module.http_api.environment["ZQ_SITE_ORIGIN"] == "https://d111111abcdef8.cloudfront.net" && !contains(keys(module.http_api.environment), "ZQ_CORS_EXTRA_ORIGINS")
+    error_message = "the function's CORS allow-list is the site origin, with no extra origins unless asked"
   }
 
   assert {
@@ -287,12 +295,20 @@ run "custom_domain_becomes_the_site_origin" {
   }
 
   assert {
-    condition     = jsonencode(module.http_api.allowed_origins) == jsonencode(["https://quiz.example.com"])
-    error_message = "CORS must allow the custom domain, and only it"
+    condition     = module.http_api.environment["ZQ_SITE_ORIGIN"] == "https://quiz.example.com" && !contains(keys(module.http_api.environment), "ZQ_CORS_EXTRA_ORIGINS")
+    error_message = "the function must answer CORS for the custom domain, and only it"
   }
 
   assert {
     condition     = jsondecode(aws_s3_object.config.content).apiBaseUrl == "https://httpapi1.execute-api.us-east-1.amazonaws.com"
     error_message = "apiBaseUrl is the API endpoint whatever the site domain is"
+  }
+
+  assert {
+    condition = anytrue([
+      for part in split("; ", module.static_site.content_security_policy) :
+      startswith(part, "connect-src ") && contains(split(" ", part), "https://httpapi1.execute-api.us-east-1.amazonaws.com")
+    ]) && !strcontains(module.static_site.content_security_policy, "*")
+    error_message = "the CSP names the exact API host whatever the site domain is"
   }
 }

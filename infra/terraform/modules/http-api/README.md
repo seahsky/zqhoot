@@ -21,20 +21,19 @@ own address as `requestContext.http.sourceIp`, which the per-IP rate limits need
   `GET /api/health`, stage `$default` with auto-deploy and default route throttling (burst 400,
   rate 200). No authorizer (the function verifies Cognito ID tokens itself, ADR-0009). A Lambda
   permission admits this API only.
-- **CORS** (`cors_configuration` on the API), because every call is cross-origin:
+- **CORS is answered by the function, not by API Gateway.** Every call is cross-origin, and the
+  function (`packages/service` `http-app.ts`, configured by `apps/server-lambda`) allows exactly
+  `ZQ_SITE_ORIGIN` plus the optional comma-separated `ZQ_CORS_EXTRA_ORIGINS`: methods `GET`, `POST`,
+  `PUT`, `DELETE`, `OPTIONS`; request headers `authorization`, `content-type`; exposed headers
+  `content-disposition`, `retry-after`, `x-request-id`; preflight cached for `86400` s; no
+  credentials (bearer tokens in a header, no cookies). Any other origin gets no CORS header.
 
-  | Setting             | Value                                                    |
-  | ------------------- | -------------------------------------------------------- |
-  | `allow_origins`     | `var.allowed_origins`: exact site origins, never `*`     |
-  | `allow_methods`     | `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS`                |
-  | `allow_headers`     | `authorization`, `content-type`                          |
-  | `expose_headers`    | `content-disposition` (file name of the results CSV)     |
-  | `max_age`           | `86400`, the most API Gateway accepts                    |
-  | `allow_credentials` | `false`: bearer tokens in a header, no cookies           |
-
-  With CORS configured, API Gateway answers preflight `OPTIONS` requests itself, so the module
-  declares no `OPTIONS` route. API Gateway also discards CORS headers that the function returns, so
-  the function must not set its own. The default `execute-api` endpoint stays enabled
+  The API therefore has **no `cors_configuration`**. With one, API Gateway would answer preflights
+  itself without invoking the function and discard the CORS headers the function returns, so the two
+  would disagree. Without one, `ANY /api/{proxy+}` sends `OPTIONS` requests to the function (every
+  path the app serves has a segment after `/api/`, so the one route covers them all) and its
+  headers reach the browser unchanged. A request that matches no route, such as `/other`, gets
+  API Gateway's own 404 without CORS headers. The default `execute-api` endpoint stays enabled
   (`disable_execute_api_endpoint = false`): it is the only way in.
 
 ## Environment
@@ -48,6 +47,7 @@ The function receives `var.environment` merged with what the module wires itself
 | `ZQ_TABLE_NAME`, `ZQ_MEDIA_BUCKET`, `ZQ_WS_FUNCTION_NAME`, `ZQ_WARM_CONCURRENCY`   | module inputs                   |
 | `ZQ_LOG_LEVEL` = `info`, `NODE_OPTIONS` = `--enable-source-maps`                   | module defaults                 |
 | `ZQ_SITE_ORIGIN`, `ZQ_COGNITO_USER_POOL_ID`, `ZQ_COGNITO_CLIENT_ID`, `ZQ_SESSION_TTL_DAYS` | `var.environment` (the env)  |
+| `ZQ_CORS_EXTRA_ORIGINS` (optional, comma-separated `https://host` origins) | `var.environment`, not set by the env |
 
 ## Inputs
 
@@ -58,7 +58,6 @@ The function receives `var.environment` merged with what the module wires itself
 | `table_name`, `table_arn`, `gsi_arn`         | string      | required | The DynamoDB table and its `gsi1` index.          |
 | `media_bucket_name`, `media_bucket_arn`      | string      | required | The media bucket.                                 |
 | `ws_function_name`, `ws_function_arn`        | string      | required | The ws function, invoked for warm-up.             |
-| `allowed_origins`                            | list(string) | required | CORS `allow_origins`: exact origins (`https://host`), no wildcard, no trailing slash. |
 | `environment`                                | map(string) | `{}`     | Extra environment variables.                      |
 | `memory_size`, `timeout`                     | number      | 512, 10  | Function memory (MB) and timeout (s).             |
 | `log_retention_days`                         | number      | 14       | Log group retention.                              |
@@ -68,19 +67,20 @@ The function receives `var.environment` merged with what the module wires itself
 ## Outputs
 
 `api_endpoint` (`https://{id}.execute-api.{region}.amazonaws.com`, no trailing slash: the web app's
-`apiBaseUrl`, since the stage is `$default` and needs no path segment), `allowed_origins` (read back
-from the API's CORS configuration), `function_name`, `function_arn`, `environment` (the complete
-Lambda environment, so the calling environment's tests can check its wiring).
+`apiBaseUrl` and the exact origin in the site's CSP `connect-src`, since the stage is `$default` and
+needs no path segment), `function_name`, `function_arn`, `environment` (the complete Lambda
+environment, so the calling environment's tests can check its wiring).
 
 ## Notes
 
-The Lambda environment and the CORS allow-list both need the site URL (the CloudFront domain). The
-API resource depends on nothing else in this module, so the function never feeds back into it: the
-integration, routes and permission are what point at the function. Because the API's CORS list
-depends on the distribution, the distribution cannot take the API's host as an input (its CSP
-`connect-src` uses a Region-wide `execute-api` wildcard instead, see
-[static-site](../static-site/README.md)).
+The Lambda environment needs the site URL (the CloudFront domain), but the API resource does not: it
+has no CORS configuration, and the integration, routes and permission are what point at the
+function. So the function never feeds back into the API, and the distribution can take
+`api_endpoint` as an input and name the API's exact host in its CSP `connect-src`
+([static-site](../static-site/README.md)). That is the reason CORS lives in the function.
 
-Not verified without an AWS account: a preflight against a deployed API. The argument names were
-read from the provider schema (`terraform providers schema -json`), and the claim that API Gateway
-answers preflight itself (including for an `ANY` route) is from the API Gateway documentation.
+Not verified without an AWS account: a preflight against a deployed API. That an API without
+`cors_configuration` sends `OPTIONS` requests matching `ANY /api/{proxy+}` to the integration and
+returns the function's CORS headers unchanged is from the API Gateway documentation. The function's
+side is tested end to end through the Hono Lambda adapter with an API Gateway v2 `OPTIONS` event
+(`apps/server-lambda/test/http-handler.test.ts`).

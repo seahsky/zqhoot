@@ -106,6 +106,10 @@ Node-only global. `test/boundary.test.ts` enforces this.
   (API Gateway `requestContext.http.sourceIp`, or the first `X-Forwarded-For` hop only behind a proxy
   you trust). Do not buffer request bodies for `PUT /api/media/*`: the app counts bytes while
   streaming and hands `media.put` a `ReadableStream`.
+- **CORS**: pass `cors: { origins }` when the browser calls the API from another origin (the AWS
+  target: the site is on CloudFront, the API on `execute-api`). Leave it out when the app and the API
+  share one origin (the VM). Do not also configure CORS in front of the app: API Gateway with a
+  `cors_configuration` would discard these headers.
 - **Housekeeping**: the service does not sweep or flush anything. On the VM, call
   `MemoryStore.sweepExpired()` periodically and flush persistence on shutdown.
 
@@ -222,6 +226,16 @@ hosts, `scheduleClose(sid, i, deadline + answerGraceMs)` when there is a deadlin
   `ApiError {error, message}`; every response has `Cache-Control: no-store`,
   `X-Content-Type-Options: nosniff` and an `X-Request-Id`.
 - **CSV file name.** `zqhoot-{pin}-{yyyy-mm-dd}.csv` uses the (UTC) day the session was created.
+- **CORS** (only when `deps.cors` is set; [ADR-0013](../../docs/adr/0013-security.md)). Hono's
+  `cors` middleware runs on `/api/*` ahead of the body limit and the bearer check, so a preflight
+  needs no token and errors (401, 404, 413, 429) are readable too. An `Origin` that is exactly one
+  of `origins` gets `Access-Control-Allow-Origin` (that origin, never `*`) and
+  `Access-Control-Expose-Headers: content-disposition,retry-after,x-request-id`. A preflight from
+  it is answered with 204, `Allow-Methods: GET,POST,PUT,DELETE,OPTIONS`,
+  `Allow-Headers: authorization,content-type` and `Max-Age: 86400`. No credentials header is ever
+  sent: hosts use a bearer token, not cookies. Any other origin, or none, gets no
+  `Access-Control-*` header (a preflight from a stranger falls through to the 404) and only
+  `Vary: Origin`. CORS is not authentication: every route still validates its input.
 
 ## Tests
 
@@ -244,7 +258,7 @@ IPs, and a fake clock in the year 2100 (so DynamoDB Local's TTL sweeper never to
 | `timing.test.ts`                                         | The answer window, `revealSettleMs`, timers and the scheduler                                                                      |
 | `races.test.ts`                                          | Double `host.next`, double close, timer vs manual close, a crash between reveal writes, concurrent answers                         |
 | `players.test.ts`, `hosts.test.ts`, `edge-cases.test.ts` | join/resume/leave, host commands, kick, moderation, stats, gone connections, defensive paths                                       |
-| `http.test.ts`                                           | Every route: happy path, 400, 401, 404 for foreign owners, 409, rate limits, body limits, media                                    |
+| `http.test.ts`                                           | Every route: happy path, 400, 401, 404 for foreign owners, 409, rate limits, body limits, media, CORS                              |
 | `units.test.ts`, `boundary.test.ts`                      | Serialisation, hashing, the LRU, origin checks, the snapshot cache, and the import boundary                                        |
 
 `test/harness.ts` builds a `GameService` and an HTTP app on a `FakeTransport` (records every message and

@@ -178,6 +178,32 @@ describe('the http bundle behind the emulator', () => {
     expect(res.json()).toMatchObject({ ok: true, target: 'aws' });
   });
 
+  it('answers CORS for its own origin, the site origin the handlers were given', async () => {
+    const preflight = (origin: string) =>
+      fetch(`${emu.info.http}/api/quizzes`, {
+        method: 'OPTIONS',
+        headers: {
+          origin,
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'authorization,content-type',
+        },
+      });
+    const own = await preflight(emu.info.origin);
+    expect(own.status).toBe(204);
+    expect(own.headers.get('access-control-allow-origin')).toBe(emu.info.origin);
+    expect(own.headers.get('access-control-allow-headers')).toBe('authorization,content-type');
+
+    const stranger = await preflight('https://evil.example');
+    expect([...stranger.headers.keys()].filter((n) => n.startsWith('access-control-'))).toEqual([]);
+
+    // The page itself is same-origin, so this only shows that CORS never gets in its way.
+    const health = await fetch(`${emu.info.http}/api/health`, {
+      headers: { origin: emu.info.origin },
+    });
+    expect(health.status).toBe(200);
+    expect(health.headers.get('access-control-expose-headers')).toContain('retry-after');
+  });
+
   it('logs the admin in and rejects a wrong password', async () => {
     const bad = await api('POST', '/api/auth/login', {
       body: { username: 'admin', password: 'nope' },

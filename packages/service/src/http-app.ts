@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Context, MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
@@ -44,6 +45,11 @@ export interface HttpAppDeps {
   info: { target: 'aws' | 'vm'; version: string };
   /** Adapters decide how to read it (API Gateway request context vs X-Forwarded-For). */
   clientIp: (c: Context) => string | undefined;
+  /**
+   * Cross-origin callers to answer. Set on AWS, where the browser calls API Gateway directly from
+   * the site's origin; absent on the VM, which serves the app and the API from one origin.
+   */
+  cors?: { origins: string[] };
 }
 
 /** Per-request values the middleware sets; part of the returned app's type. */
@@ -195,6 +201,27 @@ export function createHttpApp(deps: HttpAppDeps): Hono<AppEnv> {
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('X-Request-Id', requestId);
   });
+
+  // Before the body limit and the auth check: a preflight carries neither a body nor a token.
+  if (deps.cors !== undefined) {
+    const allowed = new Set(deps.cors.origins);
+    const crossOrigin = cors({
+      origin: [...allowed],
+      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowHeaders: ['authorization', 'content-type'],
+      exposeHeaders: ['content-disposition', 'retry-after', 'x-request-id'],
+      maxAge: 86_400,
+      credentials: false,
+    });
+    app.use('/api/*', async (c, next) => {
+      const origin = c.req.header('origin');
+      // Hono's middleware would still send Access-Control-Expose-Headers (and, to a preflight,
+      // Allow-Methods) to a stranger. Any other origin gets none of them.
+      if (origin !== undefined && allowed.has(origin)) return crossOrigin(c, next);
+      await next();
+      c.header('Vary', 'Origin', { append: true });
+    });
+  }
 
   const jsonLimit = bodyLimit({
     maxSize: JSON_BODY_LIMIT,

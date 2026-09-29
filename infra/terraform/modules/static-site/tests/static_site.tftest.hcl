@@ -26,7 +26,7 @@ mock_provider "aws" {
 
 variables {
   name                              = "tst"
-  api_origin                        = "https://*.execute-api.us-east-1.amazonaws.com"
+  api_origin                        = "https://abc123.execute-api.us-east-1.amazonaws.com"
   media_bucket_id                   = "tst-media-20260929"
   media_bucket_arn                  = "arn:aws:s3:::tst-media-20260929"
   media_bucket_regional_domain_name = "tst-media-20260929.s3.us-east-1.amazonaws.com"
@@ -123,7 +123,7 @@ run "security_headers_follow_adr_0013" {
   assert {
     condition = one(one(aws_cloudfront_response_headers_policy.security.security_headers_config).content_security_policy).content_security_policy == join("; ", [
       "default-src 'self'",
-      "connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com wss://def456.execute-api.us-east-1.amazonaws.com/live https://tst-abc12345.auth.us-east-1.amazoncognito.com https://tst-media-20260929.s3.us-east-1.amazonaws.com",
+      "connect-src 'self' https://abc123.execute-api.us-east-1.amazonaws.com wss://def456.execute-api.us-east-1.amazonaws.com/live https://tst-abc12345.auth.us-east-1.amazoncognito.com https://tst-media-20260929.s3.us-east-1.amazonaws.com",
       "img-src 'self' data: blob:",
       "style-src 'self' 'unsafe-inline'",
       "frame-ancestors 'none'",
@@ -138,9 +138,15 @@ run "security_headers_follow_adr_0013" {
   assert {
     condition = anytrue([
       for part in split("; ", one(one(aws_cloudfront_response_headers_policy.security.security_headers_config).content_security_policy).content_security_policy) :
-      startswith(part, "connect-src ") && contains(split(" ", part), "https://*.execute-api.us-east-1.amazonaws.com")
+      startswith(part, "connect-src ") && contains(split(" ", part), "https://abc123.execute-api.us-east-1.amazonaws.com")
     ])
     error_message = "the HTTP API origin must be in connect-src"
+  }
+
+  # A wildcard would let a script that runs on the page reach any API Gateway API in the Region.
+  assert {
+    condition     = !strcontains(output.content_security_policy, "*")
+    error_message = "no wildcard anywhere in the Content-Security-Policy"
   }
 
   assert {
@@ -269,11 +275,31 @@ run "aliases_need_a_certificate" {
   expect_failures = [var.acm_certificate_arn]
 }
 
-run "api_origin_must_be_an_https_host_source" {
+run "api_origin_must_be_an_exact_https_origin" {
   command = plan
 
   variables {
     api_origin = "https://abc123.execute-api.us-east-1.amazonaws.com/api"
+  }
+
+  expect_failures = [var.api_origin]
+}
+
+run "api_origin_cannot_be_a_wildcard" {
+  command = plan
+
+  variables {
+    api_origin = "https://*.execute-api.us-east-1.amazonaws.com"
+  }
+
+  expect_failures = [var.api_origin]
+}
+
+run "api_origin_cannot_be_a_bare_wildcard" {
+  command = plan
+
+  variables {
+    api_origin = "https://*"
   }
 
   expect_failures = [var.api_origin]

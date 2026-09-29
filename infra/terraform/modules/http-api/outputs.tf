@@ -1,11 +1,6 @@
 output "api_endpoint" {
-  description = "HTTP API invoke URL (https://{id}.execute-api.{region}.amazonaws.com, no trailing slash). The browser calls it directly, so it is the web app's apiBaseUrl."
+  description = "HTTP API invoke URL (https://{id}.execute-api.{region}.amazonaws.com, no trailing slash). The browser calls it directly, so it is the web app's apiBaseUrl and, as an origin, the site's CSP connect-src entry. It depends on the API resource only, never on the function or the site URL."
   value       = aws_apigatewayv2_api.this.api_endpoint
-}
-
-output "allowed_origins" {
-  description = "Origins the API's CORS configuration allows, read back from the API resource."
-  value       = sort(tolist(one(aws_apigatewayv2_api.this.cors_configuration).allow_origins))
 }
 
 output "function_name" {

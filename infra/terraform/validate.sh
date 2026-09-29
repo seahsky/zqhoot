@@ -29,6 +29,10 @@ Exit status is 0 only if every step passed.
 EOF
 }
 
+# Without a shared cache, init unpacks the ~800 MB AWS provider into every directory it checks.
+export TF_PLUGIN_CACHE_DIR="${TF_PLUGIN_CACHE_DIR:-$HOME/.terraform.d/plugin-cache}"
+mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
 skip_tests=0
 skip_tflint=0
 for arg in "$@"; do

@@ -27,6 +27,27 @@ function expectSecurityHeaders(res: { headers: Headers }) {
   expect(res.headers.get('x-content-type-options')).toBe('nosniff');
 }
 
+const SITE = 'https://quiz.example.com';
+
+/** The app as the AWS target builds it: over the harness's store, answering CORS for `origins`. */
+function corsApp(h: Harness, origins: string[]) {
+  return createHttpApp({
+    store: h.store,
+    clock: h.clock,
+    ids: h.ids,
+    hostAuth: h.hostAuth,
+    media: h.media,
+    logger: h.logger,
+    engine: h.engine,
+    info: { target: 'aws', version: 'test' },
+    clientIp: () => h.ip,
+    cors: { origins },
+  });
+}
+
+const corsHeaders = (res: { headers: Headers }): string[] =>
+  [...res.headers.keys()].filter((name) => name.startsWith('access-control-'));
+
 const errorBody = (res: { json: <T>() => T }) => res.json<{ error: string; message: string }>();
 
 /**
@@ -175,6 +196,168 @@ describeWithStores('HTTP app', (make) => {
       const h = await make();
       const me = await h.api('GET', '/api/me', { token: A });
       expect(me.json()).toEqual({ hostId: h.hostIds.a, displayName: 'Host A' });
+    });
+  });
+
+  describe('CORS', () => {
+    const preflight = (app: Harness['app'], origin: string) =>
+      app.request('/api/quizzes', {
+        method: 'OPTIONS',
+        headers: {
+          origin,
+          'access-control-request-method': 'POST',
+          'access-control-request-headers': 'authorization,content-type',
+        },
+      });
+
+    it('answers a preflight from an allowed origin with 204 and the allow-list', async () => {
+      const h = await make();
+      const res = await preflight(corsApp(h, [SITE]), SITE);
+      expect(res.status).toBe(204);
+      expect(await res.text()).toBe('');
+      expect(res.headers.get('access-control-allow-origin')).toBe(SITE);
+      expect(res.headers.get('access-control-allow-methods')).toBe('GET,POST,PUT,DELETE,OPTIONS');
+      expect(res.headers.get('access-control-allow-headers')).toBe('authorization,content-type');
+      expect(res.headers.get('access-control-max-age')).toBe('86400');
+      // Bearer tokens in a header, never cookies.
+      expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+      expect(res.headers.get('vary')).toContain('Origin');
+      expectSecurityHeaders(res);
+    });
+
+    it('needs no token for the preflight, whichever /api path it names', async () => {
+      const h = await make();
+      const app = corsApp(h, [SITE]);
+      for (const path of ['/api/me', '/api/join/123456', '/api/sessions/abcdef/results.csv']) {
+        const res = await app.request(path, {
+          method: 'OPTIONS',
+          headers: { origin: SITE, 'access-control-request-method': 'GET' },
+        });
+        expect(res.status, path).toBe(204);
+        expect(res.headers.get('access-control-allow-origin'), path).toBe(SITE);
+      }
+    });
+
+    it('gives a disallowed origin no CORS headers at all', async () => {
+      const h = await make();
+      const app = corsApp(h, [SITE]);
+      const lookalikes = [
+        'https://evil.example',
+        'http://quiz.example.com',
+        'https://quiz.example.com:8443',
+        'https://quiz.example.com.evil.example',
+        'https://sub.quiz.example.com',
+        'https://QUIZ.example.com',
+        `${SITE}/`,
+        'null',
+        '*',
+      ];
+      for (const origin of lookalikes) {
+        const pre = await preflight(app, origin);
+        expect(corsHeaders(pre), `preflight from ${origin}`).toEqual([]);
+        const get = await app.request('/api/health', { headers: { origin } });
+        expect(get.status, origin).toBe(200);
+        expect(corsHeaders(get), `GET from ${origin}`).toEqual([]);
+      }
+    });
+
+    it('sends Access-Control-Allow-Origin and the exposed headers on an actual GET', async () => {
+      const h = await make();
+      const res = await corsApp(h, [SITE]).request('/api/health', { headers: { origin: SITE } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('access-control-allow-origin')).toBe(SITE);
+      expect(res.headers.get('access-control-expose-headers')).toBe(
+        'content-disposition,retry-after,x-request-id',
+      );
+      expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+      expect(res.headers.get('vary')).toContain('Origin');
+      // The body and the other headers are as they are without CORS.
+      expect(await res.json()).toEqual({ ok: true, version: 'test', target: 'aws' });
+      expectSecurityHeaders(res);
+      expect(res.headers.get('x-request-id')).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
+    it('lets the browser read errors too: 401, 404, 413 and 429 carry the headers', async () => {
+      const h = await make();
+      const app = corsApp(h, [SITE]);
+      const send = (path: string, init: RequestInit = {}) =>
+        app.request(path, { ...init, headers: { origin: SITE, ...init.headers } });
+
+      const responses = {
+        401: await send('/api/me'),
+        404: await send('/api/nothing-here'),
+        413: await send('/api/quizzes', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${A}`, 'content-type': 'application/json' },
+          body: 'x'.repeat(256 * 1024 + 1),
+        }),
+      };
+      for (const [status, res] of Object.entries(responses)) {
+        expect(res.status).toBe(Number(status));
+        expect(res.headers.get('access-control-allow-origin'), status).toBe(SITE);
+      }
+
+      // A rate-limited caller must be able to read Retry-After cross-origin.
+      let limited = await send('/api/join/123456');
+      for (let i = 0; i < 30 && limited.status !== 429; i++) {
+        limited = await send('/api/join/123456');
+      }
+      expect(limited.status).toBe(429);
+      expect(limited.headers.get('access-control-allow-origin')).toBe(SITE);
+      expect(limited.headers.get('access-control-expose-headers')).toContain('retry-after');
+      expect(limited.headers.get('retry-after')).toMatch(/^\d+$/);
+    });
+
+    it('allows exactly the configured origins', async () => {
+      const h = await make();
+      const other = 'https://quiz.example.org';
+      const app = corsApp(h, [SITE, other]);
+      for (const origin of [SITE, other]) {
+        const res = await app.request('/api/health', { headers: { origin } });
+        expect(res.headers.get('access-control-allow-origin')).toBe(origin);
+      }
+      const stranger = await app.request('/api/health', {
+        headers: { origin: 'https://x.example' },
+      });
+      expect(corsHeaders(stranger)).toEqual([]);
+      // An empty list allows nobody.
+      const none = await corsApp(h, []).request('/api/health', { headers: { origin: SITE } });
+      expect(corsHeaders(none)).toEqual([]);
+    });
+
+    it('adds no CORS headers to a request without an Origin', async () => {
+      const h = await make();
+      const res = await corsApp(h, [SITE]).request('/api/health');
+      expect(res.status).toBe(200);
+      expect(corsHeaders(res)).toEqual([]);
+    });
+
+    it('serves nothing outside /api/{segment}, the one path shape the AWS route forwards', async () => {
+      // API Gateway sends OPTIONS (and everything else) to the function only for the route
+      // `ANY /api/{proxy+}`, which needs at least one segment after /api/. A handler registered
+      // anywhere else would answer real requests but never its preflight.
+      const h = await make();
+      const served = h.app.routes.filter((r) => r.method !== 'ALL').map((r) => r.path);
+      expect(served.length).toBeGreaterThan(10);
+      for (const path of served) expect(path, path).toMatch(/^\/api\/[^/]+/);
+    });
+
+    it('leaves paths outside /api alone', async () => {
+      const h = await make();
+      const res = await corsApp(h, [SITE]).request('/elsewhere', { headers: { origin: SITE } });
+      expect(res.status).toBe(404);
+      expect(corsHeaders(res)).toEqual([]);
+    });
+
+    it('applies no CORS middleware when `cors` is not configured (the VM is same-origin)', async () => {
+      const h = await make();
+      const get = await h.app.request('/api/health', { headers: { origin: SITE } });
+      expect(get.status).toBe(200);
+      expect(corsHeaders(get)).toEqual([]);
+      expect(get.headers.get('vary')).toBeNull();
+      const pre = await preflight(h.app, SITE);
+      expect(corsHeaders(pre)).toEqual([]);
+      expect(pre.status).toBe(404);
     });
   });
 

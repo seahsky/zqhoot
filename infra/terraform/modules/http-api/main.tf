@@ -1,9 +1,10 @@
 locals {
   function_name = "${var.name}-http"
 
-  # The Lambda environment needs the site URL. The API's CORS allow-list needs it too, but the API
-  # depends on nothing else here: the integration, routes and permission are what point at the
-  # function, so the Lambda environment never feeds back into the API.
+  # The Lambda environment needs the site URL (ZQ_SITE_ORIGIN, the origin the function answers CORS
+  # for). The API resource does not: the integration, routes and permission are what point at the
+  # function, so the Lambda environment never feeds back into the API and the distribution may take
+  # the API's host as an input.
   environment = merge(
     {
       ZQ_LOG_LEVEL = "info"
@@ -126,19 +127,13 @@ resource "aws_apigatewayv2_api" "this" {
   # The browser needs the default endpoint; never turn it off.
   disable_execute_api_endpoint = false
 
-  # API Gateway answers preflight OPTIONS itself when CORS is configured, so there is no OPTIONS
-  # route. It also discards any CORS header the function returns and adds these instead.
+  # Deliberately no cors_configuration: the function answers CORS itself (packages/service
+  # http-app.ts, for ZQ_SITE_ORIGIN and ZQ_CORS_EXTRA_ORIGINS). With one, API Gateway answers the
+  # preflight without invoking the function and replaces the CORS headers the function sets, so
+  # the two would disagree. Without it the ANY route below sends OPTIONS to the function and its
+  # headers reach the browser unchanged. It also keeps this resource independent of the site URL,
+  # which is what lets the distribution's CSP name this API's exact host.
   # No authorizer: the function verifies Cognito ID tokens itself (ADR-0009).
-  cors_configuration {
-    allow_origins = var.allowed_origins
-    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    allow_headers = ["authorization", "content-type"]
-    # Lets the browser read the file name of the results CSV download.
-    expose_headers = ["content-disposition"]
-    max_age        = 86400 # the most API Gateway accepts
-    # Bearer tokens in a header, no cookies: credentialed CORS is never needed.
-    allow_credentials = false
-  }
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {
@@ -149,6 +144,8 @@ resource "aws_apigatewayv2_integration" "lambda" {
   payload_format_version = "2.0"
 }
 
+# Every path the app serves is /api/{something}, and ANY includes OPTIONS, so preflights reach the
+# function. A request that matches no route never does: API Gateway answers it with its own 404.
 resource "aws_apigatewayv2_route" "api" {
   api_id    = aws_apigatewayv2_api.this.id
   route_key = "ANY /api/{proxy+}"

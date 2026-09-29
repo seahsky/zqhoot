@@ -89,7 +89,7 @@ describe('dist/ws/index.mjs and dist/http/index.mjs as Lambda would load them', 
   type Handler = (
     event: unknown,
     context: unknown,
-  ) => Promise<{ statusCode: number; body?: string }>;
+  ) => Promise<{ statusCode: number; body?: string; headers?: Record<string, string> }>;
 
   /** A plain file-URL import, so this is the bundle itself and not a transform of the source. */
   async function importHandler(name: (typeof names)[number]): Promise<Handler> {
@@ -128,6 +128,32 @@ describe('dist/ws/index.mjs and dist/http/index.mjs as Lambda would load them', 
       version: string;
     };
     expect(JSON.parse(result.body as string)).toEqual({ ok: true, version, target: 'aws' });
+  });
+
+  it('answers a CORS preflight from the built http bundle, for the site origin only', async () => {
+    const handler = await importHandler('http');
+    const preflight = (origin: string) =>
+      handler(
+        {
+          version: '2.0',
+          routeKey: 'ANY /api/{proxy+}',
+          rawPath: '/api/quizzes',
+          rawQueryString: '',
+          headers: { origin, 'access-control-request-method': 'POST' },
+          requestContext: {
+            http: { method: 'OPTIONS', path: '/api/quizzes', sourceIp: '203.0.113.5' },
+          },
+          isBase64Encoded: false,
+        },
+        {},
+      );
+    const allowed = await preflight('https://quiz.example.com');
+    expect(allowed.statusCode).toBe(204);
+    expect(allowed.headers?.['access-control-allow-origin']).toBe('https://quiz.example.com');
+    const stranger = await preflight('https://evil.example');
+    expect(
+      Object.keys(stranger.headers ?? {}).filter((n) => n.startsWith('access-control-')),
+    ).toEqual([]);
   });
 
   it('checks the Origin on $connect from the built ws bundle', async () => {
