@@ -1,0 +1,99 @@
+# zqhoot on one VM (ADR-0015): the Node server behind Caddy, which terminates TLS.
+#
+#   cp .env.example .env    # then edit; see the README
+#   docker compose up -d --build
+#
+# Run from this folder, or from anywhere with `-f deploy/vm/docker-compose.yml`: paths below are
+# relative to this file, and so is the .env that Compose reads for the ${...} values.
+
+name: zqhoot
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      # Become the image's OCI version and revision labels. Set them in the shell that builds:
+      #   ZQ_REVISION=$(git rev-parse HEAD) docker compose up -d --build
+      args:
+        ZQ_VERSION: ${ZQ_VERSION:-dev}
+        ZQ_REVISION: ${ZQ_REVISION:-unknown}
+    image: ${ZQ_IMAGE:-zqhoot:local}
+    # ZQ_ENV_FILE lets deploy/vm/smoke-test.sh point at a throwaway file; normally it is ./.env.
+    env_file: ${ZQ_ENV_FILE:-.env}
+    environment:
+      # Fixed by how the image and the stack are wired; a .env cannot change them.
+      ZQ_PORT: '8080'
+      ZQ_HOST: 0.0.0.0
+      ZQ_DATA_DIR: /data
+      ZQ_WEB_DIST: /app/web
+      # Only Caddy can reach the app (no published ports), so its X-Forwarded-For is the client.
+      ZQ_TRUST_PROXY: 'true'
+      ZQ_PUBLIC_URL: ${ZQ_PUBLIC_URL:-https://${ZQ_DOMAIN:?set ZQ_DOMAIN in .env}}
+    volumes:
+      - zqdata:/data
+    restart: unless-stopped
+    # The server flushes state.json on SIGTERM within 10 s; Docker's default 10 s grace would race it.
+    stop_grace_period: 20s
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:8080/api/health']
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      # ZQ_BIND_ADDRESS, when set, limits the listeners to one address (the smoke test uses 127.0.0.1).
+      - '${ZQ_BIND_ADDRESS:+${ZQ_BIND_ADDRESS}:}${ZQ_HTTP_PORT:-80}:80'
+      - '${ZQ_BIND_ADDRESS:+${ZQ_BIND_ADDRESS}:}${ZQ_HTTPS_PORT:-443}:443'
+      # HTTP/3
+      - '${ZQ_BIND_ADDRESS:+${ZQ_BIND_ADDRESS}:}${ZQ_HTTPS_PORT:-443}:443/udp'
+    environment:
+      # Required in every mode, so a forgotten value fails here with a clear message instead of as a
+      # Caddyfile error. The http mode does not use it; any value will do there.
+      ZQ_DOMAIN: ${ZQ_DOMAIN:?set ZQ_DOMAIN in .env}
+      ZQ_TLS_MODE: ${ZQ_TLS_MODE:-acme}
+      ZQ_ACME_EMAIL: ${ZQ_ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # cert.pem and key.pem for ZQ_TLS_MODE=files; read only when that mode is on.
+      - ${ZQ_CERTS_DIR:-./certs}:/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    logging: *logging
+
+volumes:
+  # state.json and uploaded media. Back this one up.
+  zqdata:
+  # Caddy's certificates and ACME account: losing it means re-issuing (and rate limits).
+  caddy_data:
+  caddy_config:

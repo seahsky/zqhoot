@@ -1,0 +1,102 @@
+# Reverse proxy and TLS terminator for the zqhoot VM stack (ADR-0015).
+#
+# One file serves every TLS mode: ZQ_TLS_MODE picks the site snippet that is imported at the
+# bottom. Environment variables (set for the caddy service in docker-compose.yml):
+#
+#   ZQ_DOMAIN      DNS name people type, no scheme (quiz.example.com). Compose requires it in every
+#                  mode, but "http" mode does not use it (any value will do there).
+#   ZQ_TLS_MODE    acme (default) | files | internal | http
+#   ZQ_ACME_EMAIL  optional contact address for the certificate authority (acme mode)
+#
+# An unknown ZQ_TLS_MODE fails at startup ("import" finds no such snippet); the stack never falls
+# back to a weaker mode by itself.
+{
+	# Empty (the default) means no contact address. Only the acme mode uses it.
+	email "{$ZQ_ACME_EMAIL:}"
+
+	# The internal mode's root certificate is for the devices that connect, not for this container.
+	skip_install_trust
+}
+
+# What every mode shares. Argument 1 is the WebSocket scheme for the CSP fallback below: wss or ws.
+(app) {
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# "?" sets a default only where the app sent no policy of its own. The app's is exact (it knows
+		# ZQ_PUBLIC_URL) and its media responses carry a stricter one that must not be replaced.
+		?Content-Security-Policy "default-src 'self'; connect-src 'self' {args[0]}://{hostport}; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		# Do not announce the proxy: Caddy's own "Server" and the "Via" that reverse_proxy adds. (Only
+		# the port-80 redirect that Caddy generates itself in the TLS modes keeps "Server: Caddy": no
+		# directive reaches that response, and it names the product without a version.)
+		-Server
+		-Via
+	}
+
+	# Compresses the web app's static files (HTML, JS, CSS). API responses (the login answer carries
+	# the host's token) and /config.json are left alone on purpose: they are small, so compression
+	# buys little and only invites BREACH-style attacks on secrets. WebSocket frames pass through
+	# untouched.
+	@static not path /api/* /config.json /ws
+	encode @static zstd gzip
+
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				# Media upload grants carry their bearer token in the query string. Authorization and
+				# Cookie headers are redacted by Caddy itself.
+				request>uri query {
+					replace t REDACTED
+				}
+			}
+		}
+	}
+
+	# WebSocket upgrades (/ws) need no extra directives.
+	reverse_proxy app:8080
+}
+
+# TLS mode "acme" (default): Caddy gets and renews a public certificate for ZQ_DOMAIN by itself.
+# Needs a public DNS name pointing here and ports 80 and 443 reachable from the internet.
+(site_acme) {
+	{$ZQ_DOMAIN} {
+		header >Strict-Transport-Security "max-age=31536000"
+		import app wss
+	}
+}
+
+# TLS mode "files": your own certificate, mounted at /certs/cert.pem and /certs/key.pem
+# (docker-compose.yml mounts ./certs there). Caddy does not renew it: replace the files and run
+# `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile`.
+(site_files) {
+	{$ZQ_DOMAIN} {
+		tls /certs/cert.pem /certs/key.pem
+		header >Strict-Transport-Security "max-age=31536000"
+		import app wss
+	}
+}
+
+# TLS mode "internal": Caddy's own certificate authority signs the certificate, for networks with
+# no public DNS. Devices must trust the root, /data/caddy/pki/authorities/local/root.crt in the
+# caddy container (see the README).
+(site_internal) {
+	{$ZQ_DOMAIN} {
+		tls internal
+		header >Strict-Transport-Security "max-age=31536000"
+		import app wss
+	}
+}
+
+# TLS mode "http": plain HTTP on port 80, no certificate, no HSTS, ZQ_DOMAIN ignored.
+# FOR LOCAL TESTING ONLY (deploy/vm/smoke-test.sh). Passwords and tokens cross the network in
+# the clear, and phones need HTTPS for several browser features.
+(site_http) {
+	:80 {
+		import app ws
+	}
+}
+
+import site_{$ZQ_TLS_MODE:acme}
