@@ -7,11 +7,12 @@ locals {
   # browser blocks the upload.
   media_upload_origin = "https://${var.media_bucket_regional_domain_name}"
 
-  # ADR-0013, plus media_upload_origin in connect-src and form-action: without it the browser
-  # blocks every image upload, whether the web app sends it with fetch/XHR or a form submit.
+  # ADR-0013, plus api_origin in connect-src (the browser calls the HTTP API directly, ADR-0002) and
+  # media_upload_origin in connect-src and form-action: without it the browser blocks every image
+  # upload, whether the web app sends it with fetch/XHR or a form submit.
   content_security_policy = join("; ", [
     "default-src 'self'",
-    "connect-src 'self' ${var.ws_url} ${var.cognito_domain} ${local.media_upload_origin}",
+    "connect-src 'self' ${var.api_origin} ${var.ws_url} ${var.cognito_domain} ${local.media_upload_origin}",
     "img-src 'self' data: blob:",
     "style-src 'self' 'unsafe-inline'",
     "frame-ancestors 'none'",
@@ -22,15 +23,6 @@ locals {
 
 data "aws_cloudfront_cache_policy" "caching_optimized" {
   name = "Managed-CachingOptimized"
-}
-
-data "aws_cloudfront_cache_policy" "caching_disabled" {
-  name = "Managed-CachingDisabled"
-}
-
-# API Gateway rejects requests whose Host header is not its own, so the viewer's Host must not be forwarded.
-data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
-  name = "Managed-AllViewerExceptHostHeader"
 }
 
 resource "aws_s3_bucket" "site" {
@@ -125,7 +117,7 @@ resource "aws_cloudfront_response_headers_policy" "security" {
 resource "aws_cloudfront_distribution" "this" {
   enabled             = true
   is_ipv6_enabled     = true
-  comment             = "${var.name}: static site, /api and /media"
+  comment             = "${var.name}: static site and /media"
   default_root_object = "index.html"
   price_class         = var.price_class
   http_version        = "http2and3"
@@ -143,18 +135,6 @@ resource "aws_cloudfront_distribution" "this" {
     origin_access_control_id = aws_cloudfront_origin_access_control.s3.id
   }
 
-  origin {
-    origin_id   = "api"
-    domain_name = var.api_domain
-
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
-  }
-
   default_cache_behavior {
     target_origin_id           = "site"
     viewer_protocol_policy     = "redirect-to-https"
@@ -168,17 +148,6 @@ resource "aws_cloudfront_distribution" "this" {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.spa_rewrite.arn
     }
-  }
-
-  ordered_cache_behavior {
-    path_pattern               = "/api/*"
-    target_origin_id           = "api"
-    viewer_protocol_policy     = "redirect-to-https"
-    allowed_methods            = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods             = ["GET", "HEAD"]
-    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
-    response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
   }
 
   ordered_cache_behavior {

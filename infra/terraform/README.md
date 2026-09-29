@@ -18,9 +18,9 @@ infra/terraform/
   modules/
     data/                 DynamoDB single table, private media bucket
     auth/                 Cognito user pool, hosted domain, public app client, optional first host
-    http-api/             Lambda "http" + API Gateway HTTP API (serves /api/*)
+    http-api/             Lambda "http" + API Gateway HTTP API (called directly by the browser, CORS)
     realtime-ws/          Lambda "ws" + API Gateway WebSocket API
-    static-site/          Private site bucket + CloudFront (site, /api/*, /media/*)
+    static-site/          Private site bucket + CloudFront (site and /media/*, no API)
     vm/                   One Ubuntu 24.04 EC2 instance running the Docker Compose stack
   envs/
     aws-serverless/       data + auth + realtime-ws + http-api + static-site, and config.json
@@ -34,34 +34,42 @@ module and environment also has a `tests/` folder of offline `terraform test` fi
 ### How the serverless modules connect
 
 ```
-                          ┌──────────────┐  table, gsi1 ARN        ┌────────────┐
-                          │     data     │────────────────────────►│  http-api  │
-                          │ table, media │  media bucket (put)     │ Lambda+API │
-                          │   bucket     │──┐                      └─────┬──────┘
-                          └──────▲───────┘  │ media bucket (origin,      │ api domain
-                                 │          │ bucket policy)             │ (CloudFront origin)
-        site origin (CORS)       │          ▼                            ▼
-   ┌─────────────────────────────┴───────────────────────────────────────────────┐
-   │                            static-site (CloudFront)                          │
-   │   /* → site bucket   /api/* → http-api   /media/* → media bucket             │
-   └───▲──────────────────────▲──────────────────────────┬──────────────────────┘
-       │ wss URL (CSP)        │ Cognito domain (CSP)      │ site URL
-┌──────┴───────┐       ┌──────┴───────┐                   ├──► auth: callback and logout URLs
-│ realtime-ws  │       │     auth     │                   ├──► http-api, realtime-ws: ZQ_SITE_ORIGIN
-│  Lambda+API  │◄──────│ pool, client │                   └──► env: config.json in the site bucket
-└──────▲───────┘ pool  └──────────────┘
-       │ ws function ARN/name (warm-up invoke, lambda:InvokeFunction)
-       └──────────── http-api
+producer ── value ──► consumer
+
+data ─────────── table name/ARN, gsi1 ARN ─────► http-api, realtime-ws
+data ─────────── media bucket (name, ARN) ─────► http-api (s3:PutObject under media/)
+data ─────────── media bucket (origin, policy) ► static-site
+realtime-ws ──── ws function name/ARN ─────────► http-api (warm-up invoke)
+realtime-ws ──── wss URL ──────────────────────► static-site (CSP connect-src)
+auth ─────────── Cognito domain ───────────────► static-site (CSP connect-src, form-action)
+auth ─────────── pool ID, client ID ───────────► http-api, realtime-ws (Lambda environment)
+static-site ──── site URL ─────────────────────► http-api (CORS allow_origins, ZQ_SITE_ORIGIN)
+                                               ► realtime-ws (ZQ_SITE_ORIGIN, Origin check)
+                                               ► data (media bucket CORS)
+                                               ► auth (callback and logout URLs)
+                                               ► env (config.json in the site bucket)
+http-api ─────── invoke URL ───────────────────► env (config.json apiBaseUrl)
 ```
 
-The site URL feeds back into the Lambda environments and the Cognito client, while CloudFront
-needs the API domain, the WebSocket URL and the Cognito domain. That is only acyclic because those
-three values come from resources that do not depend on the site URL: `aws_apigatewayv2_api` does
-not depend on its Lambda (the integration, routes and permission do), the WebSocket URL is built
-from the API and the stage name, and the Cognito domain does not depend on the app client. The
-media bucket's CORS rule and both bucket policies are separate resources for the same reason.
-`terraform validate` fails on a cycle, and the environment test applies the whole composition
-against a mock provider.
+The browser reaches three places: CloudFront (the app and `/media/*`), the WebSocket API and the
+HTTP API, the last two directly. The HTTP API is **not** behind CloudFront
+([ADR-0002](../../docs/adr/0002-realtime-transport.md)): through CloudFront the function would see
+an edge address as `sourceIp` and the per-IP limits of
+[ADR-0013](../../docs/adr/0013-security.md) would count edges, not players. Calling it directly makes
+the calls cross-origin, hence the CORS allow-list (exactly the site origin, never `*`) and the API's
+entry in the CSP `connect-src`. `config.json`'s `apiBaseUrl` is the API's invoke URL.
+
+The site URL feeds back into the Lambda environments, the Cognito client and the HTTP API's CORS
+allow-list, while CloudFront needs the WebSocket URL and the Cognito domain. That is only acyclic
+because those two values come from resources that do not depend on the site URL: the WebSocket URL
+is built from the API and the stage name, and the Cognito domain does not depend on the app client.
+The HTTP API is deliberately **not** an input to CloudFront: its CORS allow-list needs the site URL,
+so giving CloudFront its host would be a cycle (`terraform validate` reports it). CloudFront's CSP
+therefore allows the Region's `execute-api` hosts with a wildcard rather than the API's own host (see
+[static-site](modules/static-site/README.md)). `aws_apigatewayv2_api` still does not depend on its
+Lambda (the integration, routes and permission do). The media bucket's CORS rule and both bucket
+policies are separate resources for the same reason. `terraform validate` fails on a cycle, and the
+environment test applies the whole composition against a mock provider.
 
 ## Prerequisites
 
@@ -275,9 +283,11 @@ The `tests/` files use `mock_provider "aws"`, so they run offline. They assert, 
 the DynamoDB table matches `tableDefinition()` in `packages/store` (keys, `gsi1`, TTL, on-demand),
 the IAM policies contain no wildcard actions and no bare `*` resource, the Lambda environment is
 exactly the variable set the wave 2 build reads (module by module, and as wired by the serverless
-environment), the CSP matches ADR-0013 plus the media bucket's upload origin, the bucket policies admit
-only the distribution, `config.json` has the shape of `RuntimeConfig`, and the VM's `user_data`
-contains no secret names.
+environment), the CSP matches ADR-0013 plus the API and media upload origins, the bucket policies
+admit only the distribution, CloudFront has no `/api/*` behaviour and no API origin, the HTTP API's
+CORS configuration allows exactly the site origin(s) (no `*`, no credentials) and `config.json`'s
+`apiBaseUrl` is the API endpoint, `config.json` has the shape of `RuntimeConfig`, and the VM's
+`user_data` contains no secret names.
 
 ## What was verified
 
@@ -288,7 +298,8 @@ network route to `registry.terraform.io`):
 - `terraform fmt -check -recursive`, `terraform init -backend=false` and `terraform validate` pass
   for all six modules and both environments; there is no dependency cycle.
 - `terraform test` (mock provider) passes for every module and both environments. The `config.json`
-  it renders parses with the real `RuntimeConfig` zod schema from `packages/protocol`.
+  it renders parses with the real `RuntimeConfig` zod schema from `packages/protocol` (checked
+  again for the absolute `apiBaseUrl` this change introduces).
 - `tflint --recursive` reports nothing with the config in this folder.
 - The four scripts pass `bash -n`, `--help` works, and their flows were exercised against stub
   `aws` and `terraform` commands (preflight below/above the threshold, no credentials, no `aws`;
@@ -310,6 +321,10 @@ network route to `registry.terraform.io`):
 
 **Not verified** (needs a real account):
 
+- A CORS preflight and a real call from the site to a deployed HTTP API, and that the Lambda sees
+  the caller's own address as `requestContext.http.sourceIp`. The CORS arguments were read from the
+  provider schema, and "API Gateway answers preflight itself when CORS is configured" is from the
+  API Gateway documentation, not observed. Nor was the CSP wildcard tried in a browser.
 - `terraform plan` and `apply` against AWS: provider-side validation and API behaviour are
   untested. Points most likely to need a tweak: WebSocket stage `auto_deploy` (documented as
   supported by API Gateway v2 for both protocols, not confirmed against WebSocket in practice),
@@ -344,15 +359,23 @@ network route to `registry.terraform.io`):
 - **Site and media bucket names** are `{name}-site-` and `{name}-media-` plus a Terraform-generated
   suffix (`bucket_prefix`), so they are globally unique without looking up the account ID.
 - **`aws_s3_object.config` owns `config.json`;** the deploy script never uploads it.
-- **The CSP goes one step beyond ADR-0013.** ADR-0013 lists `connect-src 'self' {wsUrl}
-  {cognitoDomain}` and `form-action 'self' {cognitoDomain}`. ADR-0011 uploads media by S3
-  presigned POST straight from the browser to the media bucket, which those directives do not
-  allow, so the CloudFront policy also allows `https://{media bucket}.s3.{region}.amazonaws.com` in
-  `connect-src` and `form-action`. The ADRs are frozen for this task: ADR-0013's CSP line needs the
-  same addition. The VM target needs none, because it uploads with a same-origin
-  `PUT /api/media/...` (ADR-0011). Wave 2's presigner must produce a URL on exactly that host (default
-  virtual-hosted-style S3 client for the bucket's Region; no custom endpoint, path-style,
-  dual-stack or FIPS endpoint). `terraform output media_upload_origin` shows it.
+- **The HTTP API is called directly, not through CloudFront** (G3, ADR-0002). CloudFront has no
+  `/api/*` behaviour and no API origin; the API has a CORS allow-list of exactly the site origin,
+  and `config.json`'s `apiBaseUrl` is the API's invoke URL. Reason: behind CloudFront the Lambda sees
+  an edge address, and forwarding the viewer's address would need a custom origin request policy
+  and a trust rule we cannot verify without an AWS account.
+- **The API's CSP `connect-src` entry is a Region-wide `execute-api` wildcard**, not the API's own
+  host. The exact host would put the API and the distribution in a dependency cycle (CORS needs the
+  site URL, the site URL needs the distribution, the distribution's CSP would need the API). The
+  trade-off is described in [static-site](modules/static-site/README.md).
+- **The CSP also allows the media upload origin.** ADR-0011 uploads media by S3 presigned POST
+  straight from the browser to the media bucket, which `connect-src` and `form-action` would
+  otherwise block, so the CloudFront policy allows
+  `https://{media bucket}.s3.{region}.amazonaws.com` in both (ADR-0013's CSP line lists it). The VM
+  target needs none, because it uploads with a same-origin `PUT /api/media/...` (ADR-0011). Wave
+  2's presigner must produce a URL on exactly that host (default virtual-hosted-style S3 client for
+  the bucket's Region; no custom endpoint, path-style, dual-stack or FIPS endpoint).
+  `terraform output media_upload_origin` shows it.
 - **Cognito user names are case-insensitive** (`username_configuration.case_sensitive = false`),
   fixed rather than a variable: Cognito cannot change it once the pool exists.
 - **Old hashed web assets are never deleted by the deploy script,** so a deploy cannot break

@@ -3,9 +3,14 @@ variable "name" {
   type        = string
 }
 
-variable "api_domain" {
-  description = "Host name (no scheme) of the HTTP API, served under /api/*."
+variable "api_origin" {
+  description = "CSP source expression for the HTTP API, added to connect-src: the browser calls the API directly, not through CloudFront. The environment passes a Region-wide execute-api wildcard, because the API's exact host cannot be an input here: the API's CORS allow-list needs this distribution's domain, so the two would depend on each other."
   type        = string
+
+  validation {
+    condition     = can(regex("^https://[^/\\s;,]+$", var.api_origin))
+    error_message = "api_origin must be an https:// host source without a path, such as https://*.execute-api.us-east-1.amazonaws.com."
+  }
 }
 
 variable "media_bucket_id" {

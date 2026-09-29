@@ -28,6 +28,11 @@ output "site_bucket_arn" {
   value       = aws_s3_bucket.site.arn
 }
 
+output "content_security_policy" {
+  description = "The Content-Security-Policy header value set on every response."
+  value       = local.content_security_policy
+}
+
 output "media_upload_origin" {
   description = "Origin the browser posts media uploads to (allowed in the CSP connect-src and form-action). Presigned POST URLs must use this host."
   value       = local.media_upload_origin

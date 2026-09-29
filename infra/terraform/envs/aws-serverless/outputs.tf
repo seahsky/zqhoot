@@ -33,6 +33,11 @@ output "distribution_domain_name" {
   value       = module.static_site.distribution_domain_name
 }
 
+output "api_url" {
+  description = "HTTP API invoke URL. The browser calls it directly (CORS), which is also config.json's apiBaseUrl."
+  value       = module.http_api.api_endpoint
+}
+
 output "ws_url" {
   description = "WebSocket URL players and hosts connect to."
   value       = module.realtime_ws.wss_url

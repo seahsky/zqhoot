@@ -26,7 +26,7 @@ mock_provider "aws" {
 
 variables {
   name                              = "tst"
-  api_domain                        = "abc123.execute-api.us-east-1.amazonaws.com"
+  api_origin                        = "https://*.execute-api.us-east-1.amazonaws.com"
   media_bucket_id                   = "tst-media-20260929"
   media_bucket_arn                  = "arn:aws:s3:::tst-media-20260929"
   media_bucket_regional_domain_name = "tst-media-20260929.s3.us-east-1.amazonaws.com"
@@ -34,31 +34,29 @@ variables {
   cognito_domain                    = "https://tst-abc12345.auth.us-east-1.amazoncognito.com"
 }
 
-run "origins_use_oac_and_the_api_is_https_only" {
+run "origins_are_the_two_buckets_behind_oac" {
   command = apply
 
   assert {
-    condition     = length(aws_cloudfront_distribution.this.origin) == 3
-    error_message = "three origins: site, media, api"
+    condition     = jsonencode(sort([for o in aws_cloudfront_distribution.this.origin : o.origin_id])) == jsonencode(["media", "site"])
+    error_message = "two origins only: the site bucket and the media bucket"
+  }
+
+  # The browser calls the HTTP API directly at its execute-api endpoint (real client IP for the
+  # per-IP rate limits, ADR-0002), so CloudFront holds no origin for it.
+  assert {
+    condition     = alltrue([for o in aws_cloudfront_distribution.this.origin : length(o.custom_origin_config) == 0])
+    error_message = "no custom origin: the HTTP API is not behind CloudFront"
   }
 
   assert {
-    condition = alltrue([
-      for o in aws_cloudfront_distribution.this.origin :
-      (o.origin_id == "api") == (length(o.custom_origin_config) == 1) &&
-      (o.origin_id == "api") == (o.origin_access_control_id == null || o.origin_access_control_id == "")
-    ])
-    error_message = "the S3 origins use origin access control, the API origin is a custom origin"
+    condition     = !anytrue([for o in aws_cloudfront_distribution.this.origin : strcontains(o.domain_name, "execute-api")])
+    error_message = "no origin may point at API Gateway"
   }
 
   assert {
-    condition = anytrue([
-      for o in aws_cloudfront_distribution.this.origin :
-      o.origin_id == "api" && o.domain_name == "abc123.execute-api.us-east-1.amazonaws.com" &&
-      one(o.custom_origin_config).origin_protocol_policy == "https-only" &&
-      jsonencode(one(o.custom_origin_config).origin_ssl_protocols) == jsonencode(["TLSv1.2"])
-    ])
-    error_message = "the API origin is https-only with TLSv1.2"
+    condition     = alltrue([for o in aws_cloudfront_distribution.this.origin : o.origin_access_control_id != null && o.origin_access_control_id != ""])
+    error_message = "both S3 origins use origin access control"
   }
 
   assert {
@@ -67,19 +65,15 @@ run "origins_use_oac_and_the_api_is_https_only" {
   }
 }
 
-run "behaviours_route_site_api_and_media" {
+run "behaviours_route_site_and_media_and_not_the_api" {
   command = apply
 
   # The managed policies are looked up by name. The mock cannot return their ids (the data source's
   # id attribute is not computed in the provider schema), so this checks the names, not which
   # behaviour got which id.
   assert {
-    condition = (
-      data.aws_cloudfront_cache_policy.caching_optimized.name == "Managed-CachingOptimized" &&
-      data.aws_cloudfront_cache_policy.caching_disabled.name == "Managed-CachingDisabled" &&
-      data.aws_cloudfront_origin_request_policy.all_viewer_except_host.name == "Managed-AllViewerExceptHostHeader"
-    )
-    error_message = "the managed policies are looked up by their AWS names"
+    condition     = data.aws_cloudfront_cache_policy.caching_optimized.name == "Managed-CachingOptimized"
+    error_message = "the managed cache policy is looked up by its AWS name"
   }
 
   assert {
@@ -94,17 +88,22 @@ run "behaviours_route_site_api_and_media" {
   assert {
     condition = anytrue([
       for b in aws_cloudfront_distribution.this.ordered_cache_behavior :
-      b.path_pattern == "/api/*" && b.target_origin_id == "api" && length(b.allowed_methods) == 7
-    ])
-    error_message = "/api/* goes to the API and allows all methods"
-  }
-
-  assert {
-    condition = anytrue([
-      for b in aws_cloudfront_distribution.this.ordered_cache_behavior :
       b.path_pattern == "/media/*" && b.target_origin_id == "media"
     ])
     error_message = "/media/* goes to the media bucket"
+  }
+
+  assert {
+    condition     = jsonencode([for b in aws_cloudfront_distribution.this.ordered_cache_behavior : b.path_pattern]) == jsonencode(["/media/*"])
+    error_message = "/media/* is the only ordered behaviour: there is no /api/* behaviour"
+  }
+
+  assert {
+    condition = alltrue(concat(
+      [for b in aws_cloudfront_distribution.this.ordered_cache_behavior : contains(["site", "media"], b.target_origin_id)],
+      [for b in aws_cloudfront_distribution.this.default_cache_behavior : contains(["site", "media"], b.target_origin_id)],
+    ))
+    error_message = "every behaviour must target one of the two buckets"
   }
 
   assert {
@@ -124,14 +123,29 @@ run "security_headers_follow_adr_0013" {
   assert {
     condition = one(one(aws_cloudfront_response_headers_policy.security.security_headers_config).content_security_policy).content_security_policy == join("; ", [
       "default-src 'self'",
-      "connect-src 'self' wss://def456.execute-api.us-east-1.amazonaws.com/live https://tst-abc12345.auth.us-east-1.amazoncognito.com https://tst-media-20260929.s3.us-east-1.amazonaws.com",
+      "connect-src 'self' https://*.execute-api.us-east-1.amazonaws.com wss://def456.execute-api.us-east-1.amazonaws.com/live https://tst-abc12345.auth.us-east-1.amazoncognito.com https://tst-media-20260929.s3.us-east-1.amazonaws.com",
       "img-src 'self' data: blob:",
       "style-src 'self' 'unsafe-inline'",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self' https://tst-abc12345.auth.us-east-1.amazoncognito.com https://tst-media-20260929.s3.us-east-1.amazonaws.com",
     ])
-    error_message = "the Content-Security-Policy does not match ADR-0013 plus the media upload origin"
+    error_message = "the Content-Security-Policy does not match ADR-0013 plus the API and media upload origins"
+  }
+
+  # The browser calls the HTTP API directly, so without this entry in connect-src every API call
+  # is blocked on the AWS target. The API is fetched, never form-posted.
+  assert {
+    condition = anytrue([
+      for part in split("; ", one(one(aws_cloudfront_response_headers_policy.security.security_headers_config).content_security_policy).content_security_policy) :
+      startswith(part, "connect-src ") && contains(split(" ", part), "https://*.execute-api.us-east-1.amazonaws.com")
+    ])
+    error_message = "the HTTP API origin must be in connect-src"
+  }
+
+  assert {
+    condition     = output.content_security_policy == one(one(aws_cloudfront_response_headers_policy.security.security_headers_config).content_security_policy).content_security_policy
+    error_message = "the content_security_policy output is the header value"
   }
 
   # Presigned-POST uploads go browser -> media bucket, so its regional endpoint must be allowed by
@@ -253,4 +267,14 @@ run "aliases_need_a_certificate" {
   }
 
   expect_failures = [var.acm_certificate_arn]
+}
+
+run "api_origin_must_be_an_https_host_source" {
+  command = plan
+
+  variables {
+    api_origin = "https://abc123.execute-api.us-east-1.amazonaws.com/api"
+  }
+
+  expect_failures = [var.api_origin]
 }

@@ -120,7 +120,7 @@ run "composes_without_a_cycle_and_writes_runtime_config" {
   assert {
     condition = jsonencode(jsondecode(aws_s3_object.config.content)) == jsonencode({
       target       = "aws"
-      apiBaseUrl   = ""
+      apiBaseUrl   = "https://httpapi1.execute-api.us-east-1.amazonaws.com"
       wsUrl        = "wss://wsapi1.execute-api.us-east-1.amazonaws.com/live"
       mediaBaseUrl = "https://d111111abcdef8.cloudfront.net/"
       joinUrl      = "https://d111111abcdef8.cloudfront.net/join"
@@ -133,6 +133,18 @@ run "composes_without_a_cycle_and_writes_runtime_config" {
       }
     })
     error_message = "config.json does not match RuntimeConfig"
+  }
+
+  # The browser calls the HTTP API directly (real client IP for the per-IP rate limits, ADR-0002),
+  # so the web app's base URL is the API's own invoke URL, without a trailing slash: the client
+  # appends /api/... itself.
+  assert {
+    condition = (
+      jsondecode(aws_s3_object.config.content).apiBaseUrl == module.http_api.api_endpoint &&
+      jsondecode(aws_s3_object.config.content).apiBaseUrl == output.api_url &&
+      !endswith(jsondecode(aws_s3_object.config.content).apiBaseUrl, "/")
+    )
+    error_message = "config.json apiBaseUrl must be the HTTP API endpoint, no trailing slash"
   }
 
   assert {
@@ -202,6 +214,38 @@ run "wires_the_lambda_environments" {
   }
 }
 
+# The API is called cross-origin, so its CORS allow-list must be exactly the site's origin and its
+# CSP connect-src must let the page reach the API.
+run "cross_origin_api_calls_are_allowed_from_the_site_only" {
+  command = apply
+
+  assert {
+    condition     = jsonencode(module.http_api.allowed_origins) == jsonencode(["https://d111111abcdef8.cloudfront.net"])
+    error_message = "CORS allow_origins must be exactly the site origin"
+  }
+
+  assert {
+    condition     = !anytrue([for o in module.http_api.allowed_origins : strcontains(o, "*")])
+    error_message = "no wildcard CORS origin"
+  }
+
+  assert {
+    condition = anytrue([
+      for part in split("; ", module.static_site.content_security_policy) :
+      startswith(part, "connect-src ") && contains(split(" ", part), "https://*.execute-api.us-east-1.amazonaws.com")
+    ])
+    error_message = "the CSP connect-src must allow the execute-api hosts of the deployment's Region"
+  }
+
+  assert {
+    condition = anytrue([
+      for part in split("; ", module.static_site.content_security_policy) :
+      startswith(part, "connect-src ") && contains(split(" ", part), "wss://wsapi1.execute-api.us-east-1.amazonaws.com/live")
+    ])
+    error_message = "the CSP connect-src must still allow the WebSocket URL"
+  }
+}
+
 # Presigned-POST uploads go browser -> media bucket. static-site must be given the media bucket (not
 # the site bucket) so its regional endpoint lands in the CSP; the CSP itself is asserted in the
 # static-site module test.
@@ -240,5 +284,15 @@ run "custom_domain_becomes_the_site_origin" {
   assert {
     condition     = jsonencode(module.auth.callback_urls) == jsonencode(["https://quiz.example.com/host"])
     error_message = "the Cognito callback URL must use the custom domain"
+  }
+
+  assert {
+    condition     = jsonencode(module.http_api.allowed_origins) == jsonencode(["https://quiz.example.com"])
+    error_message = "CORS must allow the custom domain, and only it"
+  }
+
+  assert {
+    condition     = jsondecode(aws_s3_object.config.content).apiBaseUrl == "https://httpapi1.execute-api.us-east-1.amazonaws.com"
+    error_message = "apiBaseUrl is the API endpoint whatever the site domain is"
   }
 }

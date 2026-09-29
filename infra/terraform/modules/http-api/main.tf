@@ -1,9 +1,9 @@
 locals {
   function_name = "${var.name}-http"
 
-  # The Lambda environment needs the CloudFront domain, and CloudFront needs this API's domain.
-  # That is only acyclic because aws_apigatewayv2_api depends on nothing here: the integration,
-  # routes and permission are what point at the function.
+  # The Lambda environment needs the site URL. The API's CORS allow-list needs it too, but the API
+  # depends on nothing else here: the integration, routes and permission are what point at the
+  # function, so the Lambda environment never feeds back into the API.
   environment = merge(
     {
       ZQ_LOG_LEVEL = "info"
@@ -116,12 +116,29 @@ resource "aws_lambda_function" "this" {
   }
 }
 
+# The browser calls this API directly at its execute-api endpoint, not through CloudFront, so that
+# requestContext.http.sourceIp is the player's address and the per-IP limits (ADR-0013) count
+# clients rather than CloudFront edges (ADR-0002). That makes every call cross-origin.
 resource "aws_apigatewayv2_api" "this" {
   name          = local.function_name
   protocol_type = "HTTP"
 
-  # No CORS block: the browser reaches this API same-origin through CloudFront (/api/*).
+  # The browser needs the default endpoint; never turn it off.
+  disable_execute_api_endpoint = false
+
+  # API Gateway answers preflight OPTIONS itself when CORS is configured, so there is no OPTIONS
+  # route. It also discards any CORS header the function returns and adds these instead.
   # No authorizer: the function verifies Cognito ID tokens itself (ADR-0009).
+  cors_configuration {
+    allow_origins = var.allowed_origins
+    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers = ["authorization", "content-type"]
+    # Lets the browser read the file name of the results CSV download.
+    expose_headers = ["content-disposition"]
+    max_age        = 86400 # the most API Gateway accepts
+    # Bearer tokens in a header, no cookies: credentialed CORS is never needed.
+    allow_credentials = false
+  }
 }
 
 resource "aws_apigatewayv2_integration" "lambda" {

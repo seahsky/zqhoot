@@ -41,6 +41,7 @@ variables {
   ws_function_arn    = "arn:aws:lambda:us-east-1:123456789012:function:t-ws"
   warm_concurrency   = 4
   log_retention_days = 14
+  allowed_origins    = ["https://d111111abcdef8.cloudfront.net"]
   environment = {
     ZQ_SITE_ORIGIN          = "https://d111111abcdef8.cloudfront.net"
     ZQ_COGNITO_USER_POOL_ID = "us-east-1_AbCdEfG"
@@ -185,9 +186,120 @@ run "api_routes_and_throttling" {
   }
 
   assert {
-    condition     = length(aws_apigatewayv2_api.this.cors_configuration) == 0 && output.api_domain == "abc123.execute-api.us-east-1.amazonaws.com"
-    error_message = "no CORS, and the API domain output has no scheme"
+    condition     = output.api_endpoint == "https://abc123.execute-api.us-east-1.amazonaws.com"
+    error_message = "the API endpoint output is the invoke URL: https, no trailing slash, no stage segment for $default"
   }
+}
+
+# The browser calls the API directly (not through CloudFront) so that sourceIp is the player's
+# address, which makes every call cross-origin.
+run "cors_allows_only_the_configured_site_origins" {
+  command = apply
+
+  assert {
+    condition     = length(aws_apigatewayv2_api.this.cors_configuration) == 1
+    error_message = "the API must have exactly one cors_configuration"
+  }
+
+  assert {
+    condition     = jsonencode(output.allowed_origins) == jsonencode(["https://d111111abcdef8.cloudfront.net"])
+    error_message = "allow_origins must be exactly the site origin"
+  }
+
+  assert {
+    condition     = !anytrue([for o in one(aws_apigatewayv2_api.this.cors_configuration).allow_origins : strcontains(o, "*")])
+    error_message = "no wildcard origin"
+  }
+
+  assert {
+    condition     = jsonencode(sort(tolist(one(aws_apigatewayv2_api.this.cors_configuration).allow_methods))) == jsonencode(["DELETE", "GET", "OPTIONS", "POST", "PUT"])
+    error_message = "allow_methods must be GET, POST, PUT, DELETE, OPTIONS"
+  }
+
+  assert {
+    condition     = jsonencode(sort(tolist(one(aws_apigatewayv2_api.this.cors_configuration).allow_headers))) == jsonencode(["authorization", "content-type"])
+    error_message = "allow_headers must be authorization and content-type"
+  }
+
+  assert {
+    condition     = jsonencode(sort(tolist(one(aws_apigatewayv2_api.this.cors_configuration).expose_headers))) == jsonencode(["content-disposition"])
+    error_message = "expose_headers must be content-disposition (the CSV download's file name)"
+  }
+
+  assert {
+    condition     = one(aws_apigatewayv2_api.this.cors_configuration).max_age == 86400
+    error_message = "preflight responses are cacheable for the API Gateway maximum, 86400 s"
+  }
+
+  assert {
+    condition     = one(aws_apigatewayv2_api.this.cors_configuration).allow_credentials == false
+    error_message = "bearer tokens, no cookies: credentialed CORS must stay off"
+  }
+
+  # The default execute-api endpoint is the only way in, so it must not be disabled.
+  assert {
+    condition     = aws_apigatewayv2_api.this.disable_execute_api_endpoint == false
+    error_message = "the default execute-api endpoint must stay enabled"
+  }
+
+  # API Gateway answers preflight itself once CORS is configured, so no OPTIONS route is declared.
+  assert {
+    condition     = !strcontains(aws_apigatewayv2_route.api.route_key, "OPTIONS") && !strcontains(aws_apigatewayv2_route.health.route_key, "OPTIONS")
+    error_message = "no OPTIONS route: API Gateway handles preflight when CORS is configured"
+  }
+}
+
+run "several_origins_are_allowed_exactly" {
+  command = apply
+
+  variables {
+    allowed_origins = ["https://quiz.example.com", "https://d111111abcdef8.cloudfront.net"]
+  }
+
+  assert {
+    condition     = jsonencode(output.allowed_origins) == jsonencode(["https://d111111abcdef8.cloudfront.net", "https://quiz.example.com"])
+    error_message = "every configured origin, and only those, must be allowed"
+  }
+}
+
+run "a_wildcard_origin_is_rejected" {
+  command = plan
+
+  variables {
+    allowed_origins = ["*"]
+  }
+
+  expect_failures = [var.allowed_origins]
+}
+
+run "a_wildcard_subdomain_origin_is_rejected" {
+  command = plan
+
+  variables {
+    allowed_origins = ["https://*.example.com"]
+  }
+
+  expect_failures = [var.allowed_origins]
+}
+
+run "an_origin_with_a_trailing_slash_is_rejected" {
+  command = plan
+
+  variables {
+    allowed_origins = ["https://quiz.example.com/"]
+  }
+
+  expect_failures = [var.allowed_origins]
+}
+
+run "no_origins_is_rejected" {
+  command = plan
+
+  variables {
+    allowed_origins = []
+  }
+
+  expect_failures = [var.allowed_origins]
 }
 
 run "missing_package_fails_plan_with_a_precondition" {

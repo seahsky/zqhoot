@@ -31,6 +31,21 @@ variable "log_retention_days" {
   }
 }
 
+variable "allowed_origins" {
+  description = "Origins the browser may call this API from (CORS allow_origins): the site URL, or its custom domain URLs. Exact origins (scheme and host), no trailing slash, no wildcard."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.allowed_origins) > 0
+    error_message = "allowed_origins needs at least one origin: without CORS the browser cannot call the API."
+  }
+
+  validation {
+    condition     = alltrue([for o in var.allowed_origins : can(regex("^https?://[^/*?#\\s]+$", o))])
+    error_message = "Every allowed origin must be an exact origin such as https://quiz.example.com: scheme and host, no path, no trailing slash, no wildcard."
+  }
+}
+
 variable "environment" {
   description = "Extra environment variables (ZQ_SITE_ORIGIN, Cognito IDs, ...). Merged over the defaults; the values wired by this module always win."
   type        = map(string)

@@ -1,11 +1,11 @@
 output "api_endpoint" {
-  description = "HTTP API base URL (https://...)."
+  description = "HTTP API invoke URL (https://{id}.execute-api.{region}.amazonaws.com, no trailing slash). The browser calls it directly, so it is the web app's apiBaseUrl."
   value       = aws_apigatewayv2_api.this.api_endpoint
 }
 
-output "api_domain" {
-  description = "HTTP API host name without scheme, used as the CloudFront custom origin."
-  value       = trimprefix(aws_apigatewayv2_api.this.api_endpoint, "https://")
+output "allowed_origins" {
+  description = "Origins the API's CORS configuration allows, read back from the API resource."
+  value       = sort(tolist(one(aws_apigatewayv2_api.this.cors_configuration).allow_origins))
 }
 
 output "function_name" {

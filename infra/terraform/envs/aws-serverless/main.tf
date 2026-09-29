@@ -22,11 +22,17 @@ locals {
 
   # https://{custom domain or *.cloudfront.net}, no trailing slash.
   #
-  # The dependency chain is acyclic at the resource level only: CloudFront needs the HTTP API's
-  # domain, the WebSocket URL and the Cognito domain, all of which come from resources that do not
-  # depend on the site URL. The Lambda functions and the Cognito app client do, and they are not
-  # inputs to CloudFront.
+  # The dependency chain is acyclic at the resource level only: CloudFront needs the WebSocket URL
+  # and the Cognito domain, both of which come from resources that do not depend on the site URL.
+  # The Lambda functions, the HTTP API (its CORS allow-list) and the Cognito app client do, and
+  # they are not inputs to CloudFront.
   site_origin = module.static_site.site_url
+
+  # The browser calls the HTTP API directly at its execute-api host. CloudFront cannot be given
+  # that exact host: the API's CORS allow-list needs the site URL, which needs the distribution,
+  # which would then need the API (terraform validate reports the cycle). So the CSP allows every
+  # execute-api host in this Region instead.
+  api_connect_src = "https://*.execute-api.${var.region}.amazonaws.com"
 
   lambda_environment = {
     ZQ_SITE_ORIGIN          = local.site_origin
@@ -82,6 +88,7 @@ module "http_api" {
   ws_function_name   = module.realtime_ws.function_name
   ws_function_arn    = module.realtime_ws.function_arn
   warm_concurrency   = var.warm_concurrency
+  allowed_origins    = [local.site_origin]
   environment        = local.lambda_environment
 }
 
@@ -89,7 +96,7 @@ module "static_site" {
   source = "../../modules/static-site"
 
   name                              = var.name
-  api_domain                        = module.http_api.api_domain
+  api_origin                        = local.api_connect_src
   media_bucket_id                   = module.data.media_bucket_name
   media_bucket_arn                  = module.data.media_bucket_arn
   media_bucket_regional_domain_name = module.data.media_bucket_regional_domain_name
@@ -111,7 +118,7 @@ resource "aws_s3_object" "config" {
 
   content = jsonencode({
     target       = "aws"
-    apiBaseUrl   = ""
+    apiBaseUrl   = trimsuffix(module.http_api.api_endpoint, "/") # the web app appends /api/...
     wsUrl        = module.realtime_ws.wss_url
     mediaBaseUrl = "${local.site_origin}/"
     joinUrl      = "${local.site_origin}/join"
