@@ -120,7 +120,8 @@ prunes them automatically. To prune by hand, do it when no session is live (open
 build lose their chunks) and well after a deploy:
 
 ```bash
-aws s3 sync apps/web/dist/assets "s3://$(terraform -chdir=infra/terraform/envs/aws-serverless output -raw site_bucket_name)/assets" --delete
+aws s3 sync apps/web/dist/assets "s3://$(terraform -chdir=infra/terraform/envs/aws-serverless output -raw site_bucket_name)/assets" --delete --size-only \
+  --cache-control "public, max-age=31536000, immutable"
 ```
 
 That removes everything under `assets/` that the current local build does not contain, so run it
