@@ -8,7 +8,7 @@ Updated as tasks complete. Each task has a spec with acceptance criteria in `doc
 | ---------------------- | ----------- | ----------------------------------------------------------------------------------------- |
 | 1. Research            | done        | `docs/research/*.md`, `docs/research/SUMMARY.md`                                          |
 | 2. Architecture        | done        | `docs/ARCHITECTURE.md`, `docs/adr/*`, `packages/protocol`, domain model, `Store` contract |
-| 3-4. MVP build, wave 1 | gate review | engine, store, infra, web foundation merged; web-b running                                |
+| 3-4. MVP build, wave 1 | done        | engine, store, infra, web foundation merged; web-b running                                |
 | 3-4. MVP build, wave 2 | in progress | service, servers, host/presenter/editor UI, VM deploy                                     |
 | 5. Verification        | pending     | E2E, load test, visual check, independent audit, README                                   |
 
@@ -20,18 +20,18 @@ Updated as tasks complete. Each task has a spec with acceptance criteria in `doc
 | W1-store          | [W1-store](tasks/W1-store.md)                   | engine model                     | merged  |
 | W1-infra          | [W1-infra](tasks/W1-infra.md)                   | none                             | merged  |
 | W1-web-a          | [W1-web-a](tasks/W1-web-a.md)                   | protocol                         | merged  |
-| W1-web-b          | [W1-web-b](tasks/W1-web-b.md)                   | W1-web-a                         | running |
+| W1-web-b          | [W1-web-b](tasks/W1-web-b.md)                   | W1-web-a                         | merged  |
 | W2-service        | [W2-service](tasks/W2-service.md)               | W1-engine, W1-store              | merged  |
 | W2-ratelimit      | [W2-ratelimit](tasks/W2-ratelimit.md)           | W2-service                       | merged  |
 | W2-server-node    | [W2-server-node](tasks/W2-server-node.md)       | W2-service                       | merged  |
 | W2-server-lambda  | [W2-server-lambda](tasks/W2-server-lambda.md)   | W2-service                       | merged  |
 | W2-vm-deploy      | [W2-vm-deploy](tasks/W2-vm-deploy.md)           | W2-server-node, W1-web-b         | merged  |
 | G1-engine-fixes   | [G1-engine-fixes](tasks/G1-engine-fixes.md)     | wave 1 gate                      | merged  |
-| G2-web-fixes      | [G2-web-fixes](tasks/G2-web-fixes.md)           | W1-web-b, G1-engine-fixes        | pending |
+| G2-web-fixes      | [G2-web-fixes](tasks/G2-web-fixes.md)           | W1-web-b, G1-engine-fixes        | running |
 | G3-aws-client-ip  | [G3-aws-client-ip](tasks/G3-aws-client-ip.md)   | wave 1 gate                      | merged  |
 | G4-app-cors       | [G4-app-cors](tasks/G4-app-cors.md)             | W2-server-lambda, G3             | merged  |
 | G5-nickname-bytes | [G5-nickname-bytes](tasks/G5-nickname-bytes.md) | G1-engine-fixes                  | merged  |
-| P5-e2e            | [P5-e2e](tasks/P5-e2e.md)                       | W2-server-node, W1-web-b         | pending |
+| P5-e2e            | [P5-e2e](tasks/P5-e2e.md)                       | W2-server-node, W1-web-b         | running |
 | P5-load           | [P5-load](tasks/P5-load.md)                     | W2-server-node, W2-server-lambda | running |
 | P5-audit          | independent Opus audit of the whole repo        | all                              | pending |
 

@@ -30,6 +30,12 @@ Owner: Sonnet implementation agent. Reviewer: independent Opus agent. Source: `d
 
 7. **Nickname errors show the reason (from G5).** The server rejects nicknames over `LIMITS.nicknameMaxBytes` (96 UTF-8 bytes) with `nickname-invalid` and the reason in `message`. The join screen currently maps every `nickname-invalid` to one generic sentence. Show a specific message per reason (too short, too long, not allowed characters, not allowed word), taken from the error's `message` field. Also add a local byte check using `TextEncoder`, so the live counter warns before submitting. Keep the counter itself grapheme-based. Test both.
 
+8. **"Game PIN" wording (lead visual check).** "Game PIN" is Kahoot's own term. Replace it everywhere it appears: labels, `aria-label`s, announcements, and the join screen's "Enter the game PIN". Use our own wording, e.g. "PIN" in labels ("PIN 482 915") and "Enter the PIN from the big screen" on the join screen. Add "game pin" to the source-scan patterns in fix 1.
+9. **Lobby name wall density (lead visual check).** The `present-lobby-400` screenshot at 3840x2160 shows only 17 names at answer-text size, then "+383 more". Players need to find their own name, so the wall must step down as the count grows, per the W1-web-b spec ("font step-down at thresholds"):
+   - Name text ranges from 5u down to the 3.5u floor (non-essential text, ADR-0016), with more columns as it shrinks: at least 60 names visible at 400 players on the 16:9 stage at 100% text size.
+   - Newest names stay first, and "+N more" appears only when even the smallest step overflows.
+   - Assert the visible-name count in `present.spec.ts` at 1366, 1920 and 3840, and inspect the screenshots.
+
 ## Files you own
 
 - `apps/web/**`
