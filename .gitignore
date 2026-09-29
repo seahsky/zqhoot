@@ -24,3 +24,6 @@ blob-report/
 load/results/raw/
 # Local data
 deploy/vm/data/
+
+# Agent worktrees
+.claude/worktrees/
