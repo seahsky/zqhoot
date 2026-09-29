@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LIMITS } from '@zqhoot/protocol';
 import { containsProfanity, normalizeNickname } from '../src/index.ts';
 import { CONFUSABLES, nicknameKey } from '../src/nickname.ts';
 
@@ -81,6 +82,88 @@ describe('normalizeNickname: length in graphemes', () => {
 
   it('rejects raw input beyond the protocol cap before doing any work', () => {
     expect(reason('a'.repeat(65))).toBe('too-long');
+  });
+});
+
+describe('normalizeNickname: length in UTF-8 bytes', () => {
+  const bytes = (name: string) => new TextEncoder().encode(name).length;
+  const flag = '🇯🇵';
+  const emoji = '😀';
+  // Five conjuncts and one consonant-vowel pair: 32 three-byte characters in 6 graphemes.
+  const indic96 = 'क्ष्मी'.repeat(5) + 'कि';
+
+  it('is capped at 96, by the protocol limit', () => {
+    expect(LIMITS.nicknameMaxBytes).toBe(96);
+  });
+
+  it('accepts exactly 96 bytes of three-byte characters and rejects 97', () => {
+    expect(bytes(indic96)).toBe(96);
+    expect(ok(indic96).nickname).toBe(indic96);
+    expect(bytes(`${indic96}a`)).toBe(97);
+    // 7 graphemes and 33 UTF-16 units: only the byte cap trips.
+    expect(reason(`${indic96}a`)).toBe('too-long');
+    expect(reason(`${indic96}${emoji}`)).toBe('too-long');
+  });
+
+  it('accepts exactly 96 bytes of four-byte characters and rejects 97', () => {
+    const flags12 = flag.repeat(12);
+    expect(bytes(flags12)).toBe(96);
+    expect(ok(flags12).nickname).toBe(flags12);
+    expect(reason(`${flags12}a`)).toBe('too-long');
+
+    const mixed = flag.repeat(11) + emoji.repeat(2);
+    expect(bytes(mixed)).toBe(96);
+    expect(ok(mixed).nickname).toBe(mixed);
+    expect(reason(`${mixed}a`)).toBe('too-long');
+    expect(reason(flag.repeat(11) + emoji.repeat(3))).toBe('too-long');
+  });
+
+  it('rejects 16 flags although they are only 16 graphemes and 64 UTF-16 units', () => {
+    const flags16 = flag.repeat(16);
+    expect(Array.from(new Intl.Segmenter().segment(flags16))).toHaveLength(16);
+    expect(flags16).toHaveLength(LIMITS.nicknameRawMaxLength);
+    expect(bytes(flags16)).toBe(128);
+    expect(reason(flags16)).toBe('too-long');
+  });
+
+  it('rejects the 192-byte Indic nickname the grapheme and raw caps let through', () => {
+    const heavy = 'क्ष्मी'.repeat(10) + 'किकि';
+    expect(bytes(heavy)).toBe(192);
+    expect(heavy).toHaveLength(LIMITS.nicknameRawMaxLength);
+    expect(reason(heavy)).toBe('too-long');
+  });
+
+  it('measures the normalised name, not the raw input', () => {
+    // Raw input is 126 bytes: the zero-width spaces are stripped before the cap applies.
+    const padded = `${indic96}${cp(0x200b).repeat(10)}`;
+    expect(bytes(padded)).toBe(126);
+    expect(ok(padded).nickname).toBe(indic96);
+    // NFKC turns three-byte full-width letters into one-byte ASCII.
+    expect(ok('Ａ'.repeat(16)).nickname).toBe('A'.repeat(16));
+  });
+
+  it('reports invalid characters before the byte cap and the byte cap before profanity', () => {
+    expect(reason(`${indic96}a${cp(0x07)}`)).toBe('invalid-characters');
+    expect(reason(`${indic96}a${COMBINING_ACUTE.repeat(4)}`)).toBe('invalid-characters');
+    expect(reason(`fuck${indic96}`)).toBe('too-long');
+  });
+
+  // The longest is 61 bytes, so a real name in any of these scripts stays well under the cap.
+  it.each([
+    ['Hindi', 'लक्ष्मी शर्मा', 37],
+    ['Hindi, three words', 'लक्ष्मी नारायण शर्मा', 56],
+    ['Bengali', 'লক্ষ্মী দাস', 31],
+    ['Bengali, two words', 'মোহাম্মদ আবদুল্লাহ', 52],
+    ['Tamil', 'தமிழ்ச்செல்வன்', 42],
+    ['Tamil, two words', 'காயத்ரி சுப்பிரமணியம்', 61],
+    ['Thai', 'สมชาย ใจดี', 28],
+    ['Arabic', 'محمد عبد الله', 24],
+    ['Chinese', '王小明', 9],
+    ['Chinese, four characters', '欧阳娜娜', 12],
+    ['Vietnamese', 'Nguyễn Thị Hương', 22],
+  ])('accepts a realistic %s name', (_script, name, size) => {
+    expect(bytes(name)).toBe(size);
+    expect(ok(name).nickname).toBe(name);
   });
 });
 

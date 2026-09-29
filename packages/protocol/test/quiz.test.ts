@@ -311,6 +311,7 @@ describe('limits at their exact boundaries', () => {
       nicknameMinGraphemes: 2,
       nicknameMaxGraphemes: 16,
       nicknameRawMaxLength: 64,
+      nicknameMaxBytes: 96,
       wordMaxLength: 25,
       wordEntriesMax: 5,
       openTextMax: 200,

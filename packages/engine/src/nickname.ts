@@ -79,6 +79,11 @@ export function nicknameKey(nickname: string): string {
 
 const graphemeCount = (name: string) => Array.from(segmenter.segment(name)).length;
 
+// The engine compiles without DOM or Node typings so no other global slips in. TextEncoder is a
+// Web API in every runtime we ship to, and `encode` is all of it this file uses.
+declare const TextEncoder: new () => { encode(input: string): { length: number } };
+const encoder = new TextEncoder();
+
 export function normalizeNickname(raw: string): NicknameResult {
   if (raw.length > LIMITS.nicknameRawMaxLength) return { ok: false, reason: 'too-long' };
   const clean = sanitize(raw, { bidi: 'reject' });
@@ -88,6 +93,9 @@ export function normalizeNickname(raw: string): NicknameResult {
   const length = graphemeCount(nickname);
   if (length < LIMITS.nicknameMinGraphemes) return { ok: false, reason: 'too-short' };
   if (length > LIMITS.nicknameMaxGraphemes) return { ok: false, reason: 'too-long' };
+  if (encoder.encode(nickname).length > LIMITS.nicknameMaxBytes) {
+    return { ok: false, reason: 'too-long' };
+  }
   const key = nicknameKey(nickname);
   if (key === '') return { ok: false, reason: 'invalid-characters' };
   if (containsProfanity(nickname) || containsProfanity(key)) {

@@ -30,7 +30,7 @@ Updated as tasks complete. Each task has a spec with acceptance criteria in `doc
 | G2-web-fixes      | [G2-web-fixes](tasks/G2-web-fixes.md)           | W1-web-b, G1-engine-fixes        | pending |
 | G3-aws-client-ip  | [G3-aws-client-ip](tasks/G3-aws-client-ip.md)   | wave 1 gate                      | merged  |
 | G4-app-cors       | [G4-app-cors](tasks/G4-app-cors.md)             | W2-server-lambda, G3             | pending |
-| G5-nickname-bytes | [G5-nickname-bytes](tasks/G5-nickname-bytes.md) | G1-engine-fixes                  | running |
+| G5-nickname-bytes | [G5-nickname-bytes](tasks/G5-nickname-bytes.md) | G1-engine-fixes                  | merged  |
 | P5-e2e            | [P5-e2e](tasks/P5-e2e.md)                       | W2-server-node, W1-web-b         | pending |
 | P5-load           | [P5-load](tasks/P5-load.md)                     | W2-server-node, W2-server-lambda | pending |
 | P5-audit          | independent Opus audit of the whole repo        | all                              | pending |
@@ -46,6 +46,7 @@ Gate review records: [wave 1](reviews/wave1-gate.md).
 
 ## Deferred review findings
 
-| Task     | Finding                                                                                                                   | Why deferred                                                                                             |
-| -------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| W1-store | R2-01: `deleteConnection` racing a `putConnection` that moves the same ID to another session can orphan a by-session item | Requires a connection ID reused across sessions at the same instant; the orphan expires with its 3 h TTL |
+| Task              | Finding                                                                                                                   | Why deferred                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| W1-store          | R2-01: `deleteConnection` racing a `putConnection` that moves the same ID to another session can orphan a by-session item | Requires a connection ID reused across sessions at the same instant; the orphan expires with its 3 h TTL |
+| G5-nickname-bytes | `maxPlayers` above 500 would push the host roster past 128 KB                                                             | No code path sets `maxPlayers` above `maxPlayersDefault` (500); clamp it if a setting is ever exposed    |

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LIMITS } from '@zqhoot/protocol';
-import type { AnswerPayload, Question } from '@zqhoot/protocol';
+import { LIMITS, ServerMessage } from '@zqhoot/protocol';
+import type { AnswerPayload, HostSnapshot, Question } from '@zqhoot/protocol';
 import {
   buildEnded,
   buildHostSnapshot,
@@ -8,19 +8,42 @@ import {
   buildPlayerSnapshot,
   computeLiveStats,
   computeReveal,
+  normalizeNickname,
   refreshModeration,
   revealFromStored,
 } from '../src/index.ts';
-import type { PlayerRecord, ResponseRecord, Scoreboard, SessionMeta } from '../src/index.ts';
-import { NOW, accept, newSession, openAtIndex, opt, revealingAt } from './helpers.ts';
+import type {
+  PlayerRecord,
+  ResponseRecord,
+  Scoreboard,
+  SessionMeta,
+  StoredQuestionResult,
+} from '../src/index.ts';
+import { NOW, accept, metaIn, newSession, openAtIndex, opt, revealingAt } from './helpers.ts';
 
 /** API Gateway WebSocket message limit (ADR-0004) and the budget for one stored result item. */
 const WS_MESSAGE_LIMIT = 128 * 1024;
 const STORED_RESULT_LIMIT = 350 * 1024;
 const PLAYERS = 500;
 const HOST_CAP = LIMITS.openRevealMax + 50;
+/** A 13-digit epoch, as the transport stamps it. */
+const TS = 1_700_000_000_000;
 
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+
+/** Both messages that carry a full host snapshot, valid on the wire and under the limit. */
+function expectHostMessagesFit(snapshot: HostSnapshot) {
+  const messages: ServerMessage[] = [
+    { type: 'welcome', ts: TS, role: 'host', snapshot },
+    { type: 'host.state', ts: TS, snapshot },
+  ];
+  for (const message of messages) {
+    expect(ServerMessage.safeParse(message).success, `${message.type} is a valid message`).toBe(
+      true,
+    );
+    expect(bytes(message), message.type).toBeLessThan(WS_MESSAGE_LIMIT);
+  }
+}
 
 const EMOJI_BASE = 0x1f600;
 const EMOJI_COUNT = 80;
@@ -37,17 +60,40 @@ function emoji(length: number, seed: number): string {
 }
 
 /**
- * 16 flags: 16 graphemes, 64 UTF-16 units (the longest `nicknameRawMaxLength` allows) and 128
- * UTF-8 bytes, the heaviest emoji nickname. Not the heaviest nickname overall: an Indic conjunct
- * one, such as 'क्ष्मी' x 10 + 'किकि', is 64 units but 192 bytes, and a 500-player roster of those
- * can exceed the host.state budget by itself. The roster is not bounded in bytes yet.
+ * Vowels only: the profanity filter reads regional indicators as the letters they show, so an
+ * arbitrary run of flags can spell a word it rejects.
+ */
+const flagLetter = (n: number) => String.fromCodePoint(0x1f1e6 + [0, 4, 8, 14, 20][n % 5]!);
+
+/**
+ * 12 flags: 12 graphemes and 96 UTF-8 bytes, the heaviest emoji nickname `nicknameMaxBytes`
+ * accepts (16 flags are 128 bytes and are rejected). The first two flags spell the seed in
+ * base 5, so up to 625 seeds give different names.
  */
 function flags(seed: number): string {
-  const letter = (n: number) => String.fromCodePoint(0x1f1e6 + (n % 26));
-  return Array.from(
-    { length: LIMITS.nicknameMaxGraphemes },
-    (_, i) => letter(seed + i) + letter(seed * 3 + i),
+  const digit = (i: number) => flagLetter(Math.floor(seed / 5 ** i));
+  return Array.from({ length: 12 }, (_, i) =>
+    i < 2 ? digit(2 * i) + digit(2 * i + 1) : flagLetter(seed + i) + flagLetter(seed * 3 + i),
   ).join('');
+}
+
+const KA = 0x0915;
+const CONSONANTS = 20;
+const VIRAMA = String.fromCodePoint(0x094d);
+const VOWEL_II = String.fromCodePoint(0x0940);
+const consonant = (n: number) => String.fromCodePoint(KA + (n % CONSONANTS));
+
+/**
+ * The heaviest Indic-script nickname: five conjuncts and a consonant-vowel pair are 6 graphemes
+ * but 32 three-byte characters, 96 UTF-8 bytes. The first conjunct spells the seed in base 20,
+ * so up to 8000 seeds give different names. The grapheme and raw-length caps alone would let
+ * through twice this ('क्ष्मी' x 10 + 'किकि' is 192 bytes).
+ */
+function conjuncts(seed: number): string {
+  const first = [seed, seed / CONSONANTS, seed / CONSONANTS ** 2].map((n) =>
+    consonant(Math.floor(n)),
+  );
+  return first.join(VIRAMA) + VOWEL_II + 'क्ष्मी'.repeat(4) + 'कि';
 }
 
 const Q = { single: 0, poll: 1, wordcloud: 2, open: 3 } as const;
@@ -58,8 +104,8 @@ const questions: Question[] = [
     type: 'single',
     prompt: 'p'.repeat(LIMITS.questionPromptMax),
     timeLimitSec: 20,
-    options: [1, 2, 3, 4].map((n) => opt(`opt-${n}`, 'o'.repeat(LIMITS.optionTextMax))),
-    correctOptionId: 'opt-1',
+    options: [1, 2, 3, 4].map((n) => opt(`option-${n}`, 'o'.repeat(LIMITS.optionTextMax))),
+    correctOptionId: 'option-1',
     points: 1,
   },
   {
@@ -67,7 +113,7 @@ const questions: Question[] = [
     type: 'poll',
     prompt: 'p'.repeat(LIMITS.questionPromptMax),
     timeLimitSec: null,
-    options: [1, 2, 3, 4, 5, 6].map((n) => opt(`opt-${n}`, 'o'.repeat(LIMITS.optionTextMax))),
+    options: [1, 2, 3, 4, 5, 6].map((n) => opt(`option-${n}`, 'o'.repeat(LIMITS.optionTextMax))),
   },
   {
     id: 'q-wordcloud',
@@ -91,9 +137,9 @@ const s = newSession(questions);
 const text = (value: string): AnswerPayload => ({ kind: 'text', text: value });
 
 describe.each([
-  ['single-emoji nicknames', (n: number) => emoji(LIMITS.nicknameMaxGraphemes, n)],
-  ['flag nicknames', flags],
-])('message sizes at the maximum quiz limits: 500 players, %s', (_label, nicknameOf) => {
+  ['12-flag nicknames', flags],
+  ['Indic conjunct nicknames', conjuncts],
+])('message sizes at the maximum quiz limits: 500 players, 96-byte %s', (_label, nicknameOf) => {
   const players: PlayerRecord[] = Array.from({ length: PLAYERS }, (_, n) => ({
     sessionId: s.meta.sessionId,
     // 21 characters, like the nanoid the service generates.
@@ -105,7 +151,8 @@ describe.each([
     kicked: false,
     lastSeenAt: 100 + n,
   }));
-  const connected = new Set(players.map((p) => p.playerId));
+  // "connected":false is a byte longer than "connected":true, so nobody connected is the worst case.
+  const connected = new Set<string>();
 
   /** Every player fills every entry the question allows, through the real evaluator. */
   function play(
@@ -124,8 +171,8 @@ describe.each([
     });
   }
 
-  const singles = play(Q.single, 1, (n) => ({ kind: 'choice', optionId: `opt-${(n % 4) + 1}` }));
-  const polls = play(Q.poll, 1, (n) => ({ kind: 'choice', optionId: `opt-${(n % 6) + 1}` }));
+  const singles = play(Q.single, 1, (n) => ({ kind: 'choice', optionId: `option-${(n % 4) + 1}` }));
+  const polls = play(Q.poll, 1, (n) => ({ kind: 'choice', optionId: `option-${(n % 6) + 1}` }));
   const words = play(Q.wordcloud, LIMITS.wordEntriesMax, (n, slot) =>
     text(emoji(LIMITS.wordMaxLength, n * LIMITS.wordEntriesMax + slot)),
   );
@@ -158,11 +205,14 @@ describe.each([
       expect(new TextEncoder().encode(answer)).toHaveLength(LIMITS.openTextMax * 4);
     }
     expect(new Set(words.map((r) => r.normalizedText)).size).toBe(words.length);
+  });
+
+  it('gives every player a distinct nickname of the maximum byte size the rules accept', () => {
+    expect(new Set(players.map((p) => p.nickname)).size).toBe(PLAYERS);
     for (const p of players) {
-      expect(Array.from(new Intl.Segmenter().segment(p.nickname))).toHaveLength(
-        LIMITS.nicknameMaxGraphemes,
-      );
-      expect(p.nickname.length).toBeLessThanOrEqual(LIMITS.nicknameRawMaxLength);
+      expect(new TextEncoder().encode(p.nickname)).toHaveLength(LIMITS.nicknameMaxBytes);
+      const normalised = normalizeNickname(p.nickname);
+      expect(normalised.ok ? normalised.nickname : normalised.reason).toBe(p.nickname);
     }
   });
 
@@ -210,14 +260,12 @@ describe.each([
       }
     });
 
-    it('keeps the host.state snapshot in reveal under the limit', () => {
-      const message = {
-        type: 'host.state',
-        sv: out.meta.version,
-        ts: NOW,
-        snapshot: hostSnapshot(out.meta),
-      };
-      expect(bytes(message)).toBeLessThan(WS_MESSAGE_LIMIT);
+    it('keeps the host welcome and host.state snapshots in reveal under the limit', () => {
+      const snapshot = hostSnapshot(out.meta);
+      expect(snapshot.phase).toBe('reveal');
+      expect(snapshot.roster).toHaveLength(PLAYERS);
+      expect(snapshot.result?.type).toBe(questions[index]?.type);
+      expectHostMessagesFit(snapshot);
     });
 
     it('keeps the stored result under the item budget', () => {
@@ -268,6 +316,7 @@ describe.each([
       if (shown?.type !== 'open') throw new Error('expected an open result');
       expect(shown.responses.length).toBeGreaterThan(0);
       expect(shown.responses.length + (shown.omitted ?? 0)).toBe(opens.length);
+      expectHostMessagesFit(snapshot);
       // What is left is the newest tail of the stored list, still oldest first.
       expect(shown.responses).toEqual(
         host.responses.slice(host.responses.length - shown.responses.length),
@@ -290,6 +339,75 @@ describe.each([
       expect(bytes({ type: 'stats', questionIndex: Q.open, ts: NOW, stats })).toBeLessThan(
         WS_MESSAGE_LIMIT,
       );
+    });
+  });
+
+  describe('host snapshot in every phase', () => {
+    const board = scored.scoreboard;
+    const snapshotAt = (
+      meta: SessionMeta,
+      scoreboard: Scoreboard | null = null,
+      result: StoredQuestionResult | null = null,
+    ) =>
+      buildHostSnapshot({
+        meta,
+        snapshot: s.snapshot,
+        players,
+        connectedPlayerIds: connected,
+        scoreboard,
+        result,
+      });
+
+    it('lobby: the full roster and nothing else', () => {
+      const snapshot = snapshotAt(s.meta);
+      expect(snapshot.phase).toBe('lobby');
+      expect(snapshot.roster).toHaveLength(PLAYERS);
+      expectHostMessagesFit(snapshot);
+    });
+
+    it.each(Object.entries(Q))('question: %s', (_name, index) => {
+      const snapshot = snapshotAt(openAtIndex(s, index));
+      expect(snapshot).toMatchObject({
+        phase: 'question',
+        question: { question: { id: expect.any(String) } },
+      });
+      expect(snapshot.roster).toHaveLength(PLAYERS);
+      expectHostMessagesFit(snapshot);
+    });
+
+    it.each(Object.entries(Q))('revealing: %s', (_name, index) => {
+      const snapshot = snapshotAt(revealingAt(s, index));
+      expect(snapshot).toMatchObject({
+        phase: 'revealing',
+        question: { closedAt: expect.any(Number) },
+      });
+      expect(snapshot.roster).toHaveLength(PLAYERS);
+      expectHostMessagesFit(snapshot);
+    });
+
+    it('reveal: open-ended answers at the maximum, as many as fit', () => {
+      const out = reveal(Q.open, opens, board);
+      const snapshot = snapshotAt(out.meta, out.scoreboard, out.stored);
+      expect(snapshot.phase).toBe('reveal');
+      expect(snapshot.result).toMatchObject({ type: 'open', omitted: expect.any(Number) });
+      expect(snapshot.roster).toHaveLength(PLAYERS);
+      expectHostMessagesFit(snapshot);
+    });
+
+    it('leaderboard: the host top ten', () => {
+      const snapshot = snapshotAt(metaIn(s.meta, 'leaderboard', Q.single), board);
+      expect(snapshot.phase).toBe('leaderboard');
+      expect(snapshot.leaderboard).toHaveLength(10);
+      expect(snapshot.roster).toHaveLength(PLAYERS);
+      expectHostMessagesFit(snapshot);
+    });
+
+    it('ended: the podium', () => {
+      const snapshot = snapshotAt(metaIn(s.meta, 'ended', Q.single), board);
+      expect(snapshot.phase).toBe('ended');
+      expect(snapshot.podium).toHaveLength(LIMITS.podiumSize);
+      expect(snapshot.roster).toHaveLength(PLAYERS);
+      expectHostMessagesFit(snapshot);
     });
   });
 

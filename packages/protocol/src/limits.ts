@@ -10,6 +10,14 @@ export const LIMITS = {
   nicknameMaxGraphemes: 16,
   /** Raw nickname input cap before normalisation; normalisation may shorten it. */
   nicknameRawMaxLength: 64,
+  /**
+   * Cap on the normalised nickname in UTF-8 bytes, on top of the grapheme and raw-length caps,
+   * which do not bound bytes: 16 graphemes of Indic conjuncts reach 192 bytes and 16 flags reach
+   * 128. The host roster (`host.state`, host `welcome`) carries every nickname, and 500 players
+   * at the larger sizes overrun API Gateway's 128 KB message limit. 96 bytes still fits a full
+   * name in any script ('लक्ष्मी शर्मा' is 37 bytes); 12 flags is the emoji ceiling.
+   */
+  nicknameMaxBytes: 96,
   quizTitleMax: 120,
   questionPromptMax: 200,
   optionTextMax: 80,

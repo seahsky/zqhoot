@@ -28,6 +28,8 @@ Owner: Sonnet implementation agent. Reviewer: independent Opus agent. Source: `d
    - Extract the predicate PlayPage passes to the Connection (which screens allow a planned reconnect) into a pure function and unit-test it for every screen.
    - The presenter and host pages must follow ADR-0008 as well. If they use planned reconnects, test their predicates the same way.
 
+7. **Nickname errors show the reason (from G5).** The server rejects nicknames over `LIMITS.nicknameMaxBytes` (96 UTF-8 bytes) with `nickname-invalid` and the reason in `message`. The join screen currently maps every `nickname-invalid` to one generic sentence. Show a specific message per reason (too short, too long, not allowed characters, not allowed word), taken from the error's `message` field. Also add a local byte check using `TextEncoder`, so the live counter warns before submitting. Keep the counter itself grapheme-based. Test both.
+
 ## Files you own
 
 - `apps/web/**`

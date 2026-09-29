@@ -43,11 +43,10 @@ const HOST_LEADERBOARD_SIZE = 10;
 
 /**
  * `host.state` is one WebSocket message and API Gateway rejects anything over 128 KB (ADR-0004).
- * A roster of 500 flag nicknames (128 UTF-8 bytes each) takes about 100 KB of it, so the
- * open-ended responses share what is left; this keeps headroom for the envelope the transport
- * wraps around the snapshot. The budget bounds only the responses: the roster is not trimmed,
- * and 500 nicknames of Indic conjuncts (192 UTF-8 bytes within the 64-unit input cap) can exceed
- * 128 KB on their own, in every phase.
+ * A roster of 500 nicknames at `LIMITS.nicknameMaxBytes` (96 UTF-8 bytes) takes about 82 KB of
+ * it, so the open-ended responses share what is left; this keeps headroom for the envelope the
+ * transport wraps around the snapshot. The budget bounds only the responses: the roster is
+ * bounded by the nickname byte cap, not trimmed here.
  */
 const HOST_STATE_MAX_BYTES = 120 * 1024;
 
@@ -286,8 +285,7 @@ export function buildPlayerSnapshot(i: {
  * Drops the oldest open-ended responses, whatever their status, until the snapshot fits the
  * `HOST_STATE_MAX_BYTES` budget. The count caps in `openViews` bound the normal case; this
  * shortens the list when a full roster and answers at the length limit would not fit one
- * WebSocket message. It cannot help when the roster alone is over budget: every response is then
- * dropped and the snapshot is still too large. Dropped responses are added to `omitted`.
+ * WebSocket message. Dropped responses are added to `omitted`.
  */
 function fitOpenResponses(
   snapshot: HostSnapshot,

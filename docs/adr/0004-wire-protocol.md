@@ -56,6 +56,6 @@ Server → client (every message carries `ts`):
 - **Size.** Client messages are capped at 4 KB (`LIMITS.clientMessageMaxBytes`). API Gateway's frame limit is 32 KB and its message limit is 128 KB.
   - The largest server messages are host snapshots (`welcome`/`host.state`). The roster alone takes about 100-130 KB at 500 players with long nicknames, measured in UTF-8 bytes.
   - Two bounds keep every server message under 128 KB, and the engine's size tests (`packages/engine/test/size.test.ts`) enforce them at 500 players:
-    - Nicknames have a UTF-8 byte cap (G5 follow-up).
+    - Nicknames are capped at 96 UTF-8 bytes (`LIMITS.nicknameMaxBytes`, ADR-0009), which bounds the roster at about 82 KB for 500 players (`maxPlayersDefault`).
     - Open-ended results are capped (`LIMITS.openRevealMax`, and a byte budget for `host.state`; see ADR-0006).
 - **Unknown or invalid messages** get `error {code:'bad-request'}` and count toward the connection's rate limit.
