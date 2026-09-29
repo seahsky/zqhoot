@@ -57,7 +57,7 @@ export function nextAction(snap: HostSnapshot): NextAction {
         ? { label: 'Finish', hint: 'End the game and show the final screen.', command }
         : { label: 'Next question', hint: 'Show the next question.', command };
     case 'ended':
-      return { label: 'Game over', hint: 'This game has ended.', command: null };
+      return { label: 'Finished', hint: 'This game has ended.', command: null };
   }
 }
 

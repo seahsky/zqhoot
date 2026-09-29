@@ -1,8 +1,11 @@
 import type { ErrorCode, PinLookupResponse } from '@zqhoot/protocol';
 import { ApiRequestError } from '../../net/http.ts';
+import { nicknameReasonCopy } from './nickname.ts';
+
+const NICKNAME_GENERIC = "That nickname isn't allowed. Try a different one.";
 
 const JOIN_ERRORS: Partial<Record<ErrorCode, string>> = {
-  'nickname-invalid': "That nickname isn't allowed. Try a different one.",
+  'nickname-invalid': NICKNAME_GENERIC,
   'nickname-taken': 'Someone in this game already has that nickname. Try a different one.',
   'session-locked': "This game isn't letting new players in.",
   'session-full': 'This game is full.',
@@ -12,7 +15,14 @@ const JOIN_ERRORS: Partial<Record<ErrorCode, string>> = {
   'protocol-version': 'This page is out of date. Reload it, then try again.',
 };
 
+/**
+ * For `nickname-invalid` the server's `message` names the reason (`too-long`, ...); an unknown
+ * one, or an older server that sends prose, gets the generic sentence.
+ */
 export function joinErrorMessage(code: ErrorCode, serverMessage: string): string {
+  if (code === 'nickname-invalid') {
+    return nicknameReasonCopy(serverMessage.trim()) ?? NICKNAME_GENERIC;
+  }
   return JOIN_ERRORS[code] ?? (serverMessage || 'Something went wrong. Try again.');
 }
 

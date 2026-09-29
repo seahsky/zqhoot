@@ -41,6 +41,12 @@ export interface LiveState {
 export interface HostState {
   /** Highest session version applied; -1 before the first snapshot. */
   sv: number;
+  /**
+   * Nothing has been applied since the connection last entered `connecting` or `reconnecting`.
+   * Only then does a `welcome` beat a higher `sv` held from the old socket (a restarted server
+   * may have rolled back); after that it competes with what this socket has delivered.
+   */
+  fresh: boolean;
   connection: ConnectionStatus;
   snapshot: HostSnapshot | null;
   /** Arrival order, oldest first. */
@@ -73,6 +79,7 @@ export type HostAction =
 export function initialHostState(connection: ConnectionStatus = 'idle'): HostState {
   return {
     sv: -1,
+    fresh: true,
     connection,
     snapshot: null,
     roster: [],
@@ -125,6 +132,7 @@ function applySnapshot(state: HostState, snap: HostSnapshot): HostState {
   return {
     ...state,
     sv: snap.sv,
+    fresh: false,
     snapshot: snap,
     roster: snap.roster,
     live: liveFor(state.live, snap),
@@ -150,8 +158,13 @@ function withNotice(state: HostState, notice: Omit<HostNotice, 'seq'>): HostStat
 
 export function hostReducer(state: HostState, action: HostAction): HostState {
   switch (action.type) {
-    case 'connection':
-      return state.connection === action.status ? state : { ...state, connection: action.status };
+    case 'connection': {
+      const restarting = action.status === 'connecting' || action.status === 'reconnecting';
+      const fresh = restarting ? true : state.fresh;
+      return state.connection === action.status && fresh === state.fresh
+        ? state
+        : { ...state, connection: action.status, fresh };
+    }
 
     case 'notice.dismiss':
       return state.notice === null ? state : { ...state, notice: null };
@@ -187,9 +200,12 @@ export function hostReducer(state: HostState, action: HostAction): HostState {
 function reduceMessage(state: HostState, msg: ServerMessage): HostState {
   switch (msg.type) {
     case 'welcome':
-      // A snapshot always wins, even with a lower `sv`: a restarted server may have rolled
-      // back by up to a second, and the snapshot is the truth.
-      return msg.role === 'host' ? applySnapshot(state, msg.snapshot) : state;
+      if (msg.role !== 'host') return state;
+      // The first snapshot of a connection wins over what the old socket left us, even with a
+      // lower `sv`: a restarted server may have rolled back by up to a second. Once this
+      // socket has delivered anything, an older snapshot lost the race to a `host.state`.
+      if (!state.fresh && msg.snapshot.sv < state.sv) return state;
+      return applySnapshot(state, msg.snapshot);
 
     case 'host.state':
       if (msg.snapshot.sv < state.sv) return state;

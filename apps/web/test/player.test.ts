@@ -315,9 +315,21 @@ describe('welcome snapshots decide the view (resume)', () => {
     expect(s.view.screen).toBe('answering');
   });
 
-  it('always applies, even with a lower sv (a restarted server may have rolled back)', () => {
-    const s = run(welcome(snapshot({ sv: 50 })), welcome(snapshot({ sv: 40, phase: 'lobby' })));
-    expect(s.sv).toBe(40);
+  it('a second welcome on the same connection with a lower sv is ignored', () => {
+    const s = run(
+      welcome(questionSnap(single, 3_000, { sv: 50 })),
+      welcome(snapshot({ sv: 40, phase: 'lobby' })),
+    );
+    expect(s.sv).toBe(50);
+    expect(s.view.screen).toBe('get-ready');
+  });
+
+  it('a second welcome with an equal or higher sv applies', () => {
+    let s = run(welcome(snapshot({ sv: 50 })), welcome(questionSnap(single, 3_000, { sv: 50 })));
+    expect(s.view.screen).toBe('get-ready');
+    s = playerReducer(s, { type: 'message', msg: welcome(snapshot({ sv: 51 })) });
+    expect(s.view.screen).toBe('lobby');
+    expect(s.sv).toBe(51);
   });
 
   it('ignores a host welcome', () => {
@@ -333,6 +345,115 @@ describe('welcome snapshots decide the view (resume)', () => {
     });
     expect(after.view).toEqual(before.view);
     expect(after.sv).toBe(before.sv);
+  });
+});
+
+describe('a resume racing a broadcast (per-connection sv rule)', () => {
+  const reconnect: PlayerAction[] = [
+    { type: 'connection', status: 'reconnecting' },
+    { type: 'connection', status: 'open' },
+  ];
+
+  it('a welcome older than a question broadcast from the same socket is ignored', () => {
+    // The host opens the question while the resume is still being answered: the broadcast
+    // is delivered first, the snapshot it overtook (still the lobby) arrives after it.
+    const s = run(
+      welcome(snapshot({ sv: 10 })),
+      ...reconnect,
+      questionMsg(single, { sv: 11 }),
+      welcome(snapshot({ sv: 10 })),
+    );
+    expect(s.view.screen).toBe('get-ready');
+    expect(s.sv).toBe(11);
+  });
+
+  it('the player can still answer the question the stale welcome tried to hide', () => {
+    const s = run(
+      welcome(snapshot({ sv: 10 })),
+      ...reconnect,
+      questionMsg(single, { sv: 11 }),
+      welcome(snapshot({ sv: 10 })),
+      tick(T0 + 3_500),
+      sent(choice('option-venus')),
+    );
+    expect(s.view).toMatchObject({ screen: 'submitted', responses: [choice('option-venus')] });
+  });
+
+  it('a stale welcome after a reveal or an ended broadcast does not throw the player back', () => {
+    const revealed = run(
+      welcome(questionSnap(single, -5_000, { sv: 11 })),
+      ...reconnect,
+      revealMsg(outcome(), { sv: 12 }),
+      welcome(questionSnap(single, -5_000, { sv: 11 })),
+    );
+    expect(revealed.view.screen).toBe('reveal');
+    expect(revealed.sv).toBe(12);
+
+    const ended = run(
+      welcome(snapshot({ sv: 20 })),
+      ...reconnect,
+      {
+        type: 'ended',
+        ts: T0 + 60_000,
+        sv: 21,
+        podium: [],
+        totalPlayers: 6,
+        you: { score: 10, rank: 1, correct: 1, answeredScored: 1, scoredQuestions: 1 },
+      },
+      welcome(snapshot({ sv: 20 })),
+    );
+    expect(ended.view.screen).toBe('ended');
+  });
+
+  it('the first welcome of a new connection applies even with a lower sv (VM restart rollback)', () => {
+    const s = run(
+      welcome(questionSnap(single, 3_000, { sv: 50 })),
+      ...reconnect,
+      welcome(snapshot({ sv: 40, phase: 'lobby' })),
+    );
+    expect(s.view.screen).toBe('lobby');
+    expect(s.sv).toBe(40);
+  });
+
+  it('broadcasts of the rolled-back server then apply from the lowered sv', () => {
+    const s = run(
+      welcome(snapshot({ sv: 50 })),
+      ...reconnect,
+      welcome(snapshot({ sv: 40 })),
+      questionMsg(single, { sv: 41 }),
+    );
+    expect(s.view.screen).toBe('get-ready');
+  });
+
+  it('every reconnect starts a new race, including one that never opened', () => {
+    let s = run(welcome(snapshot({ sv: 30 })), questionMsg(single, { sv: 31 }));
+    expect(s.fresh).toBe(false);
+    for (const status of ['reconnecting', 'connecting'] as const) {
+      s = playerReducer(s, { type: 'connection', status });
+      expect(s.fresh).toBe(true);
+      s = playerReducer(s, { type: 'connection', status: 'open' });
+      s = playerReducer(s, { type: 'message', msg: welcome(snapshot({ sv: 5 })) });
+      expect(s.sv).toBe(5);
+      expect(s.fresh).toBe(false);
+      s = playerReducer(s, { type: 'message', msg: welcome(snapshot({ sv: 4 })) });
+      expect(s.sv).toBe(5);
+    }
+  });
+
+  it('opening the socket alone does not re-arm the rule', () => {
+    const s = run(welcome(snapshot({ sv: 30 })), { type: 'connection', status: 'open' });
+    expect(s.fresh).toBe(false);
+  });
+
+  it('a broadcast that is itself stale does not count as delivered on this connection', () => {
+    // sv 30 was applied on the old socket; the new socket's first word is an old broadcast.
+    const s = run(
+      welcome(snapshot({ sv: 30 })),
+      ...reconnect,
+      questionMsg(single, { sv: 12 }),
+      welcome(snapshot({ sv: 29 })),
+    );
+    expect(s.sv).toBe(29);
   });
 });
 
@@ -649,12 +770,87 @@ describe('word cloud and open-ended entries', () => {
   });
 
   it('reconciles with the server count when an ack says fewer entries were kept', () => {
-    let s = run(welcome(questionSnap(cloud, -1_000)));
-    s = playerReducer(s, sent(text('a')));
-    s = playerReducer(s, sent(text('b')));
+    let s = run(welcome(questionSnap(cloud, -1_000, { responses: [text('a')] })));
+    s = playerReducer(s, sent(text('A')));
+    s = playerReducer(s, sent(text('a ')));
     s = playerReducer(s, { type: 'message', msg: ack('duplicate', 1) });
     s = playerReducer(s, { type: 'message', msg: ack('duplicate', 1) });
-    expect(s.view).toMatchObject({ responses: [text('a')] });
+    expect(s.view).toMatchObject({ responses: [text('a')], sending: false });
+  });
+});
+
+describe('duplicate acks drop the oldest pending entry', () => {
+  const text = (t: string): AnswerPayload => ({ kind: 'text', text: t });
+  const acks = (...list: Array<[status: 'accepted' | 'duplicate', entries: number]>) =>
+    list.map(([status, entries]) => ack(status, entries));
+  const list = (s: PlayerState) => (s.view.screen === 'submitted' ? s.view.responses : null);
+
+  it('[accepted, duplicate, accepted]: the new word stays, the repeated one goes', () => {
+    const s = run(
+      welcome(questionSnap(cloud, -1_000)),
+      sent(text('cat')),
+      sent(text('cat')),
+      sent(text('dog')),
+      ...acks(['accepted', 1], ['duplicate', 1], ['accepted', 2]),
+    );
+    expect(list(s)).toEqual([text('cat'), text('dog')]);
+    expect(s.view).toMatchObject({ sending: false, remaining: 1 });
+  });
+
+  it('[accepted, accepted] with entries 1 then 2 keeps both', () => {
+    const s = run(
+      welcome(questionSnap(cloud, -1_000)),
+      sent(text('cat')),
+      sent(text('dog')),
+      ...acks(['accepted', 1], ['accepted', 2]),
+    );
+    expect(list(s)).toEqual([text('cat'), text('dog')]);
+  });
+
+  it('a duplicate in the middle of three pending sends leaves the other two, in order', () => {
+    let s = run(
+      welcome(questionSnap(cloud, -1_000)),
+      sent(text('cat')),
+      sent(text('Cat')),
+      sent(text('dog')),
+    );
+    s = playerReducer(s, { type: 'message', msg: ack('accepted', 1) });
+    expect(list(s)).toEqual([text('cat'), text('Cat'), text('dog')]);
+    s = playerReducer(s, { type: 'message', msg: ack('duplicate', 1) });
+    expect(list(s)).toEqual([text('cat'), text('dog')]);
+    expect(s.view).toMatchObject({ sending: true });
+    s = playerReducer(s, { type: 'message', msg: ack('accepted', 2) });
+    expect(list(s)).toEqual([text('cat'), text('dog')]);
+    expect(s.view).toMatchObject({ sending: false });
+  });
+
+  it('a duplicate first in line drops the oldest pending entry, not the newest', () => {
+    let s = run(
+      welcome(questionSnap(cloud, -1_000, { responses: [text('cat')] })),
+      sent(text('Cat')),
+      sent(text('dog')),
+    );
+    s = playerReducer(s, { type: 'message', msg: ack('duplicate', 1) });
+    expect(list(s)).toEqual([text('cat'), text('dog')]);
+    s = playerReducer(s, { type: 'message', msg: ack('accepted', 2) });
+    expect(list(s)).toEqual([text('cat'), text('dog')]);
+  });
+
+  it('is no refusal: no notice, and nothing is handed back to the field', () => {
+    let s = run(
+      welcome(questionSnap(cloud, -1_000, { responses: [text('cat')] })),
+      sent(text('Cat')),
+    );
+    s = playerReducer(s, { type: 'message', msg: ack('duplicate', 1) });
+    expect(s.view).toMatchObject({ screen: 'submitted', notice: null, sending: false });
+    expect((s.view as { restore?: unknown }).restore).toBeUndefined();
+  });
+
+  it('keeps the entry when the server holds one this page never confirmed', () => {
+    // A second tab, or an ack lost with the socket: the duplicate is what the server has.
+    const s = run(welcome(questionSnap(cloud, -1_000)), sent(text('cat')), ack('duplicate', 1));
+    expect(list(s)).toEqual([text('cat')]);
+    expect(s.view).toMatchObject({ sending: false });
   });
 });
 
@@ -906,7 +1102,108 @@ describe('reveal', () => {
         }),
       ),
     );
+    // An older server does not send the question, and this page holds none.
     expect(resumed.view).toMatchObject({ correctAnswer: null });
+  });
+});
+
+describe('a resume during the reveal (reveal.question)', () => {
+  const counts = { answered: 5, totalPlayers: 6 };
+  const CASES: Array<[string, PublicQuestion, QuestionResult, unknown]> = [
+    ['single', single, singleResult, { slot: 1, text: 'Venus' }],
+    [
+      'truefalse',
+      trueFalse,
+      { type: 'truefalse', ...counts, correct: true, counts: { true: 4, false: 1 } },
+      { slot: 0, text: 'True' },
+    ],
+    [
+      'poll',
+      poll,
+      { type: 'poll', ...counts, counts: { 'option-cafe': 3, 'option-park': 2 } },
+      null,
+    ],
+    [
+      'wordcloud',
+      cloud,
+      { type: 'wordcloud', ...counts, words: [{ text: 'sunny', count: 3 }] },
+      null,
+    ],
+    ['open', open, { type: 'open', ...counts, responses: [], omitted: 4 }, null],
+    [
+      'rating',
+      rating,
+      { type: 'rating', ...counts, histogram: [0, 1, 1, 2, 1], average: 3.6 },
+      null,
+    ],
+  ];
+
+  const resume = (question: PublicQuestion, result: QuestionResult) =>
+    run(
+      welcome(
+        snapshot({
+          phase: 'reveal',
+          questionIndex: 2,
+          reveal: { result, you: outcome({ correct: false }), question },
+        }),
+      ),
+    );
+
+  for (const [type, question, result, expected] of CASES) {
+    it(`${type}: the resumed reveal shows what the connected one does`, () => {
+      const resumed = resume(question, result);
+      expect(resumed.view).toMatchObject({ screen: 'reveal', index: 2, correctAnswer: expected });
+      // The same reveal delivered live, on a phone that had the question open.
+      const reveal: ServerMessage = {
+        type: 'reveal',
+        ts: T0 + 25_000,
+        sv: 3,
+        index: 2,
+        result,
+        you: outcome({ correct: false }),
+      };
+      const live = run(welcome(snapshot({ sv: 1 })), questionMsg(question, { sv: 2 }), reveal);
+      expect(live.view).toMatchObject({ correctAnswer: expected });
+    });
+  }
+
+  it('single: a player who answered wrongly is told the right answer after a resume', () => {
+    const s = resume(single, singleResult);
+    expect(s.view).toMatchObject({
+      variant: 'incorrect',
+      correctAnswer: { slot: 1, text: 'Venus' },
+    });
+  });
+
+  it('a question that does not match the result gives no answer text instead of a wrong one', () => {
+    expect(resume(poll, singleResult).view).toMatchObject({ correctAnswer: null });
+  });
+
+  it('keeps what the page already held when the snapshot leaves the question out', () => {
+    const s = run(
+      welcome(questionSnap(single, -25_000, { sv: 11 })),
+      { type: 'connection', status: 'reconnecting' },
+      { type: 'connection', status: 'open' },
+      welcome(
+        snapshot({
+          sv: 12,
+          phase: 'reveal',
+          questionIndex: 2,
+          reveal: { result: singleResult, you: outcome({ correct: false }) },
+        }),
+      ),
+    );
+    expect(s.view).toMatchObject({ correctAnswer: { slot: 1, text: 'Venus' } });
+  });
+
+  it('the same reveal delivered twice keeps the answer card', () => {
+    const s = run(
+      welcome(snapshot({ sv: 1 })),
+      questionMsg(single, { sv: 2 }),
+      revealMsg(outcome({ correct: false }), { sv: 3 }),
+      revealMsg(outcome({ correct: false }), { sv: 3 }),
+    );
+    expect(s.view).toMatchObject({ correctAnswer: { slot: 1, text: 'Venus' } });
   });
 });
 

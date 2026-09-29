@@ -85,7 +85,7 @@ describe('the Next button, phase by phase', () => {
   it('ended: nothing to press', () => {
     const a = nextAction(hostSnapshot({ phase: 'ended', questionIndex: 9, podium: PODIUM }));
     expect(a.command).toBeNull();
-    expect(a.label).toBe('Game over');
+    expect(a.label).toBe('Finished');
   });
 
   it('every command it builds is a valid host.next', () => {

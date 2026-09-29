@@ -10,6 +10,7 @@ import type { PlayerCredentials } from '../../net/credentials.ts';
 import { createWakeLock } from '../../net/wakeLock.ts';
 import { initialPlayerState, playerReducer } from '../../state/player.ts';
 import type { PlayerScreen } from '../../state/player.ts';
+import { playerMayReconnect } from '../../state/reconnect.ts';
 import { PlayScreen } from './PlayScreen.tsx';
 
 /** How often the countdown re-reads the server clock. Numerals only change once a second. */
@@ -64,7 +65,7 @@ function ActiveGame({ creds }: { creds: PlayerCredentials }) {
       },
       onStatus: (status) => dispatch({ type: 'connection', status }),
       // ADR-0008: the proactive reconnect belongs between questions, not while one is open.
-      canReconnectNow: () => !isQuestionOpen(screenRef.current),
+      canReconnectNow: () => playerMayReconnect(screenRef.current),
     });
     connection.current = conn;
     conn.start();

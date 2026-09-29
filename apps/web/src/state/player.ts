@@ -133,6 +133,12 @@ export type PlayerScreen = PlayerView['screen'];
 export interface PlayerState {
   /** Highest session version applied; -1 before the first snapshot. */
   sv: number;
+  /**
+   * Nothing has been applied since the connection last entered `connecting` or `reconnecting`.
+   * Only then does a `welcome` beat a higher `sv` held from the old socket (a restarted server
+   * may have rolled back); after that it competes with what this socket has delivered.
+   */
+  fresh: boolean;
   /** Estimated server time, advanced by `tick` and by message timestamps; never goes backwards. */
   now: number;
   connection: ConnectionStatus;
@@ -197,6 +203,7 @@ export type PlayerAction =
 export function initialPlayerState(connection: ConnectionStatus = 'idle'): PlayerState {
   return withView({
     sv: -1,
+    fresh: true,
     now: 0,
     connection,
     quizTitle: '',
@@ -343,6 +350,15 @@ function currentRun(s: PlayerState): QuestionRun | null {
   return s.stage.kind === 'question' ? s.stage.run : null;
 }
 
+/** The public question this page already holds for `index`, from the open run or a reveal. */
+function heldQuestion(s: PlayerState, index: number): PublicQuestion | null {
+  const { stage } = s;
+  if (stage.kind === 'question')
+    return stage.run.info.index === index ? stage.run.info.question : null;
+  if (stage.kind === 'reveal') return stage.index === index ? stage.question : null;
+  return null;
+}
+
 function withRun(s: PlayerState, run: QuestionRun): PlayerState {
   return withView({ ...s, stage: { kind: 'question', run } });
 }
@@ -358,10 +374,13 @@ function isFinal(s: PlayerState): boolean {
 
 export function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
   switch (action.type) {
-    case 'connection':
-      return state.connection === action.status
+    case 'connection': {
+      const restarting = action.status === 'connecting' || action.status === 'reconnecting';
+      const fresh = restarting ? true : state.fresh;
+      return state.connection === action.status && fresh === state.fresh
         ? state
-        : withView({ ...state, connection: action.status });
+        : withView({ ...state, connection: action.status, fresh });
+    }
 
     case 'tick': {
       if (!Number.isFinite(action.now) || action.now <= state.now) return state;
@@ -401,9 +420,13 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
 
   switch (msg.type) {
     case 'welcome':
-      // A snapshot always wins over what we hold, even with a lower `sv`: a restarted
-      // server may have rolled back by up to a second, and the snapshot is the truth.
-      return msg.role === 'player' ? applySnapshot(state, msg.snapshot) : state;
+      if (msg.role !== 'player') return state;
+      // The first snapshot of a connection wins over what the old socket left us, even with a
+      // lower `sv`: a restarted server may have rolled back by up to a second. Once this
+      // socket has delivered anything, a snapshot older than that lost the race to a
+      // broadcast (a resume answered after the question opened) and is dropped.
+      if (!state.fresh && msg.snapshot.sv < state.sv) return state;
+      return applySnapshot(state, msg.snapshot);
 
     case 'question': {
       if (msg.sv < state.sv) return state;
@@ -423,6 +446,7 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
       return withView({
         ...state,
         sv: msg.sv,
+        fresh: false,
         totalQuestions: msg.total,
         stage: { kind: 'question', run },
       });
@@ -430,10 +454,10 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
 
     case 'reveal': {
       if (msg.sv < state.sv) return state;
-      const held = currentRun(state);
       return withView({
         ...state,
         sv: msg.sv,
+        fresh: false,
         me: state.me && {
           ...state.me,
           score: msg.you.score,
@@ -445,7 +469,7 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
           index: msg.index,
           result: msg.result,
           outcome: msg.you,
-          question: held && held.info.index === msg.index ? held.info.question : null,
+          question: heldQuestion(state, msg.index),
         },
       });
     }
@@ -455,6 +479,7 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
       return withView({
         ...state,
         sv: msg.sv,
+        fresh: false,
         me: state.me && { ...state.me, score: msg.you.score, rank: msg.you.rank },
         stage: { kind: 'leaderboard', index: msg.index, standing: msg.you },
       });
@@ -465,6 +490,7 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
       return withView({
         ...state,
         sv: msg.sv,
+        fresh: false,
         me: state.me && { ...state.me, score: msg.you.score, rank: msg.you.rank },
         stage: {
           kind: 'ended',
@@ -520,7 +546,9 @@ function applySnapshot(state: PlayerState, snap: PlayerSnapshot): PlayerState {
       index: snap.questionIndex,
       result: snap.reveal.result,
       outcome: snap.reveal.you,
-      question: null,
+      // A server that predates `reveal.question` leaves it out; what this page already held
+      // for the same question then does as well as nothing.
+      question: snap.reveal.question ?? heldQuestion(state, snap.questionIndex),
     };
   } else if (snap.phase === 'leaderboard' && snap.leaderboard) {
     stage = { kind: 'leaderboard', index: snap.questionIndex, standing: snap.leaderboard.you };
@@ -536,6 +564,7 @@ function applySnapshot(state: PlayerState, snap: PlayerSnapshot): PlayerState {
   return withView({
     ...state,
     sv: snap.sv,
+    fresh: false,
     quizTitle: snap.quizTitle,
     totalQuestions: snap.totalQuestions,
     me,
@@ -584,13 +613,28 @@ function reduceAck(state: PlayerState, msg: AnswerAckMsg): PlayerState {
     return withRun(state, rejectOldestPending(run, reason));
   }
 
-  // `duplicate` means the server already holds this response, which is what we wanted.
   const pending = Math.max(0, run.pending - 1);
   let responses = run.responses;
+  if (msg.status === 'duplicate' && run.pending > 0 && !holdsUnknownEntry(run, msg.entries)) {
+    // The server already had this entry, which is what we wanted, so it is not listed twice.
+    // Acks come back in send order: the entry to drop is the oldest one still waiting, wherever
+    // the later ones stand.
+    responses = [...responses];
+    responses.splice(responses.length - run.pending, 1);
+  }
   if (pending === 0 && msg.entries > 0 && responses.length > msg.entries) {
     responses = responses.slice(0, msg.entries);
   }
   return withRun(state, { ...run, pending, responses });
+}
+
+/**
+ * The server holds more entries than this page has confirmed, so the duplicate it just
+ * reported is the entry we do not know about (a second tab, an ack lost with a socket): the
+ * optimistic copy is the one to keep.
+ */
+function holdsUnknownEntry(run: QuestionRun, serverEntries: number): boolean {
+  return serverEntries > run.responses.length - run.pending;
 }
 
 function rejectOldestPending(run: QuestionRun, reason: Notice): QuestionRun {

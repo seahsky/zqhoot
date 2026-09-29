@@ -6,9 +6,11 @@
  * makes the compiler reject a registry that misses or invents an id.
  *
  * Conventions: ids are `{group}-{name}`. Ids starting with `present-` are exempt from the
- * no-horizontal-scroll check (the stage is letterboxed, not scrolled).
+ * no-horizontal-scroll check (the stage is letterboxed, not scrolled). Screens of group `test`
+ * exist to prove the e2e checks can fail; they are not screens of the app and stay out of the
+ * axe and screenshot matrix (`MATRIX_SCREENS`).
  */
-export type ScreenGroup = 'landing' | 'join' | 'play' | 'present' | 'host' | 'edit';
+export type ScreenGroup = 'landing' | 'join' | 'play' | 'present' | 'host' | 'edit' | 'test';
 
 export interface ScreenMeta {
   id: string;
@@ -44,7 +46,7 @@ export const SCREENS = [
   { id: 'play-reveal-unscored', title: 'Play: reveal, no points', group: 'play' },
   { id: 'play-reveal-no-answer', title: 'Play: reveal, no answer', group: 'play' },
   { id: 'play-leaderboard', title: 'Play: leaderboard standing', group: 'play' },
-  { id: 'play-ended', title: 'Play: game over', group: 'play' },
+  { id: 'play-ended', title: 'Play: final results', group: 'play' },
   { id: 'play-reconnecting', title: 'Play: reconnecting', group: 'play' },
   { id: 'play-kicked', title: 'Play: removed by host', group: 'play' },
   { id: 'play-session-over', title: 'Play: game ended', group: 'play' },
@@ -70,7 +72,7 @@ export const SCREENS = [
   { id: 'present-podium', title: 'Present: podium', group: 'present' },
   {
     id: 'present-ended-unscored',
-    title: 'Present: game over, no scored questions',
+    title: 'Present: final screen, no scored questions',
     group: 'present',
   },
   { id: 'present-help', title: 'Present: keyboard help', group: 'present' },
@@ -91,9 +93,14 @@ export const SCREENS = [
   { id: 'edit-question-rating', title: 'Edit: rating question', group: 'edit' },
   { id: 'edit-errors', title: 'Edit: validation errors', group: 'edit' },
   { id: 'edit-conflict', title: 'Edit: save conflict', group: 'edit' },
+
+  { id: 'test-overflow', title: 'Test: a deliberately over-wide element', group: 'test' },
 ] as const satisfies readonly ScreenMeta[];
 
 export type ScreenId = (typeof SCREENS)[number]['id'];
+
+/** The screens of the app: what the axe, screenshot and preference passes visit. */
+export const MATRIX_SCREENS: readonly ScreenMeta[] = SCREENS.filter((s) => s.group !== 'test');
 
 /** The 16:9 presenter stage is letterboxed rather than scrolled, so it skips the scroll check. */
 export function skipsHorizontalScrollCheck(id: string): boolean {

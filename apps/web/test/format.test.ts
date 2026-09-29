@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { ApiRequestError } from '../src/net/http.ts';
-import { digitsOnly, nicknameCounter, validateNickname } from '../src/screens/join/nickname.ts';
+import { LIMITS } from '@zqhoot/protocol';
+import {
+  NICKNAME_REASON_COPY,
+  digitsOnly,
+  nicknameCounter,
+  utf8Bytes,
+  validateNickname,
+} from '../src/screens/join/nickname.ts';
 import {
   joinErrorMessage,
   lookupErrorMessage,
@@ -110,6 +117,46 @@ describe('nickname helpers', () => {
     expect(nicknameCounter('a'.repeat(18))).toBe('18 / 16 (too long)');
   });
 
+  describe('the UTF-8 byte cap (LIMITS.nicknameMaxBytes)', () => {
+    // A flag is one grapheme and eight bytes: 12 fit the 96-byte cap, 13 do not, though 13 is
+    // far below the 16-grapheme limit.
+    const flags = (n: number) => '\u{1F1F3}\u{1F1FF}'.repeat(n);
+
+    it('counts bytes the way the server does', () => {
+      expect(utf8Bytes('Riley')).toBe(5);
+      expect(utf8Bytes('é')).toBe(2);
+      expect(utf8Bytes('日本')).toBe(6);
+      expect(utf8Bytes(flags(1))).toBe(8);
+      expect(utf8Bytes('')).toBe(0);
+      expect(LIMITS.nicknameMaxBytes).toBe(96);
+    });
+
+    it('accepts a nickname that is exactly at the cap', () => {
+      expect(graphemeCount(flags(12))).toBe(12);
+      expect(utf8Bytes(flags(12))).toBe(LIMITS.nicknameMaxBytes);
+      expect(validateNickname(flags(12))).toBeNull();
+    });
+
+    it('refuses one byte over the cap, before it is sent, with the too-long sentence', () => {
+      expect(graphemeCount(flags(13))).toBeLessThanOrEqual(LIMITS.nicknameMaxGraphemes);
+      expect(validateNickname(flags(13))).toBe(NICKNAME_REASON_COPY['too-long']);
+      // Accented Latin is two bytes a letter: 16 graphemes, 32 bytes, fine; three-byte CJK
+      // reaches 48 bytes, still fine. Only the heaviest emoji get near the cap.
+      expect(validateNickname('é'.repeat(16))).toBeNull();
+      expect(validateNickname('日'.repeat(16))).toBeNull();
+    });
+
+    it('measures the collapsed name, like the server, not the raw text', () => {
+      expect(validateNickname(`  ${flags(12)}   `)).toBeNull();
+    });
+
+    it('keeps the counter in graphemes and warns as soon as the byte cap is passed', () => {
+      expect(nicknameCounter(flags(12))).toBe('12 / 16');
+      expect(nicknameCounter(flags(13))).toBe('13 / 16 (too long: emoji count for more)');
+      expect(nicknameCounter('a'.repeat(17))).toBe('17 / 16 (too long)');
+    });
+  });
+
   it('keeps only up to six digits of a PIN', () => {
     expect(digitsOnly('12a3-45 6789')).toBe('123456');
     expect(digitsOnly('')).toBe('');
@@ -129,6 +176,42 @@ describe('join copy', () => {
       expect(text).not.toContain('SERVER TEXT');
       expect(text.length).toBeGreaterThan(10);
     }
+  });
+
+  describe('a rejected nickname says why (the reason is the error message)', () => {
+    const reasons = ['too-short', 'too-long', 'invalid-characters', 'inappropriate'] as const;
+
+    it('has a different sentence for every reason the server sends', () => {
+      const texts = reasons.map((reason) => joinErrorMessage('nickname-invalid', reason));
+      expect(new Set(texts).size).toBe(reasons.length);
+      expect(texts[0]).toMatch(/at least 2/);
+      expect(texts[1]).toMatch(/too long/);
+      expect(texts[2]).toMatch(/characters/);
+      expect(texts[3]).toMatch(/word/);
+      for (const reason of reasons) {
+        expect(joinErrorMessage('nickname-invalid', reason)).toBe(NICKNAME_REASON_COPY[reason]);
+      }
+    });
+
+    it('uses the same sentence as the local check for length', () => {
+      expect(joinErrorMessage('nickname-invalid', 'too-long')).toBe(
+        validateNickname('a'.repeat(17)),
+      );
+      expect(joinErrorMessage('nickname-invalid', 'too-short')).toBe(validateNickname('a'));
+    });
+
+    it('falls back to the generic sentence for a reason it does not know, or prose', () => {
+      const generic = joinErrorMessage('nickname-invalid', '');
+      expect(generic).toMatch(/isn't allowed/);
+      for (const message of ['nope', 'constructor', '__proto__', 'Nickname rejected.']) {
+        expect(joinErrorMessage('nickname-invalid', message)).toBe(generic);
+      }
+    });
+
+    it('does not let another code borrow the nickname reasons', () => {
+      expect(joinErrorMessage('nickname-taken', 'too-long')).toMatch(/already has that nickname/);
+      expect(joinErrorMessage('internal', 'too-long')).toBe('too-long');
+    });
   });
 
   it('falls back to the server message for codes without copy', () => {

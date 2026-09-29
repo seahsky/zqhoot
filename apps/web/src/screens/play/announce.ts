@@ -27,7 +27,7 @@ export function announcementFor(view: PlayerView): string {
     case 'leaderboard':
       return standingSentence(view.standing);
     case 'ended':
-      return 'Game over';
+      return 'Final results';
     case 'kicked':
       return 'The host removed you from this game';
     case 'session-over':

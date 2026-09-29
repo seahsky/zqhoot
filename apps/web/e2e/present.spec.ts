@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { SCREENS } from '../src/dev/manifest.ts';
+import { names } from '../src/dev/fixtures/hostSnapshots.ts';
 import { OPEN_QUESTION_COUNTS } from '../src/dev/fixtures/present.ts';
 import { openScreen } from './helpers.ts';
 
@@ -154,6 +155,60 @@ for (const size of SIZES) {
         expect(await outsideStage(page)).toEqual([]);
       });
     }
+
+    test('present-lobby-400: at least 60 names are on the wall, newest first, the rest counted', async ({
+      page,
+    }) => {
+      await openScreen(page, 'present-lobby-400');
+      const chips = page.getByTestId('name-wall').locator('li');
+      const texts = await chips.allInnerTexts();
+      const last = texts.at(-1) ?? '';
+      const more = /^\+([\d,]+) more$/.exec(last);
+      expect(more, `the last chip says "${last}"`).not.toBeNull();
+      const shown = texts.slice(0, -1);
+      expect(shown.length, 'names on the wall').toBeGreaterThanOrEqual(60);
+      expect(shown.length + Number((more as RegExpExecArray)[1]!.replace(',', ''))).toBe(400);
+      // The fixture's roster is in join order; the wall starts with the newest.
+      expect(shown).toEqual(names(400).reverse().slice(0, shown.length));
+
+      // Every name is whole, on screen and inside the wall: nothing is clipped or ellipsised.
+      const wall = await page.getByTestId('name-wall').boundingBox();
+      const stage = await stageBox(page);
+      const boxes = await chips.evaluateAll((els) =>
+        els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return {
+            text: el.textContent,
+            right: r.right,
+            bottom: r.bottom,
+            clipped: el.scrollWidth > el.clientWidth,
+          };
+        }),
+      );
+      for (const box of boxes) {
+        expect(box.clipped, box.text ?? '').toBe(false);
+        expect(box.right, box.text ?? '').toBeLessThanOrEqual(wall!.x + wall!.width + 1);
+        expect(box.bottom, box.text ?? '').toBeLessThanOrEqual(stage.y + stage.height + 1);
+      }
+      await page.screenshot({
+        path: `e2e/screenshots/present-lobby-400/${size.width}x${size.height}.png`,
+      });
+    });
+
+    test('present-lobby: a room of 22 shows everyone in the biggest type', async ({ page }) => {
+      await openScreen(page, 'present-lobby');
+      const chips = page.getByTestId('name-wall').locator('li');
+      await expect(chips).toHaveCount(22);
+      expect(await chips.allInnerTexts()).toEqual(names(22).reverse());
+      const fontU = await chips
+        .first()
+        .evaluate(
+          (el) =>
+            parseFloat(getComputedStyle(el).fontSize) /
+            (document.querySelector('[data-testid="stage"]')!.getBoundingClientRect().height / 100),
+        );
+      expect(fontU).toBeCloseTo(5, 1);
+    });
 
     for (const id of ['present-lobby-400', 'present-question-long']) {
       test(`${id}: no text overflows its container`, async ({ page }) => {

@@ -9,7 +9,7 @@ export function Ended({ view }: { view: EndedView }) {
   const { standing, podium } = view;
   return (
     <>
-      <p className={styles.eyebrow}>Game over</p>
+      <p className={styles.eyebrow}>Final results</p>
       <div className={`${styles.stack} ${styles.centered}`}>
         <h1 className={styles.title}>
           {standing.rank === null ? 'Thanks for playing' : `You finished ${ordinal(standing.rank)}`}

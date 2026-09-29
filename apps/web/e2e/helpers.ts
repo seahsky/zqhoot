@@ -24,6 +24,32 @@ export async function openScreen(page: Page, id: string) {
   });
 }
 
+/**
+ * The page must not scroll sideways. The measure is the layout viewport's own width
+ * (`documentElement.clientWidth`), never `window.innerWidth`: with mobile emulation an
+ * over-wide page inflates `innerWidth` to fit it (1280 for a 320 px phone), so a comparison
+ * against it can never fail on a phone or tablet.
+ */
+export async function expectNoHorizontalScroll(page: Page) {
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  // The measure is only honest while the layout viewport is the project's own width (a scrollbar
+  // may take a few pixels of it). If emulation ever widens it, fail loudly instead of passing.
+  const viewport = page.viewportSize();
+  if (viewport) {
+    expect(clientWidth, 'the layout viewport is the width of the project viewport').toBeGreaterThan(
+      viewport.width - 24,
+    );
+    expect(clientWidth).toBeLessThanOrEqual(viewport.width);
+  }
+  expect(
+    scrollWidth,
+    `horizontal scroll: the page is ${scrollWidth}px wide in a ${clientWidth}px viewport`,
+  ).toBeLessThanOrEqual(clientWidth);
+}
+
 /** axe, horizontal scroll, and a full-page screenshot under `e2e/screenshots/{shotDir}/`. */
 export async function checkScreen(page: Page, id: string, shotDir: string) {
   await openScreen(page, id);
@@ -40,13 +66,7 @@ export async function checkScreen(page: Page, id: string, shotDir: string) {
     .join('\n');
   expect(results.violations, report).toEqual([]);
 
-  if (!skipsHorizontalScrollCheck(id)) {
-    const overflow = await page.evaluate(() => ({
-      scrollWidth: document.documentElement.scrollWidth,
-      innerWidth: window.innerWidth,
-    }));
-    expect(overflow.scrollWidth, 'horizontal scroll').toBeLessThanOrEqual(overflow.innerWidth);
-  }
+  if (!skipsHorizontalScrollCheck(id)) await expectNoHorizontalScroll(page);
 
   await page.screenshot({ path: `e2e/screenshots/${shotDir}/${id}.png`, fullPage: true });
 }

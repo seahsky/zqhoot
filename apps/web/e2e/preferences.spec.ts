@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { SCREENS } from '../src/dev/manifest.ts';
+import { MATRIX_SCREENS } from '../src/dev/manifest.ts';
 import { checkScreen, openScreen } from './helpers.ts';
 
 /**
@@ -35,7 +35,7 @@ for (const pass of PASSES) {
       await page.emulateMedia(pass.media);
     });
 
-    for (const { id } of SCREENS) {
+    for (const { id } of MATRIX_SCREENS) {
       test(id, async ({ page }, testInfo) => {
         await checkScreen(page, id, `${testInfo.project.name}-${pass.name}`);
         const active = await page.evaluate((q) => matchMedia(q).matches, pass.query);

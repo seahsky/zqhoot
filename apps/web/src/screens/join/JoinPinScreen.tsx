@@ -29,10 +29,10 @@ export function JoinPinScreen({
   return (
     <PhoneShell>
       <form className={styles.form} onSubmit={submit} noValidate>
-        <h1>Enter the game PIN</h1>
+        <h1>Enter the PIN from the big screen</h1>
         <TextField
-          label="Game PIN"
-          hint="The 6 digits on the big screen."
+          label="PIN"
+          hint="It is 6 digits long."
           error={error}
           inputRef={inputRef}
           variant="code"

@@ -95,11 +95,45 @@ describe('welcome and host.state', () => {
     expect(same.snapshot?.locked).toBe(false);
   });
 
-  it('a welcome always wins, even with a lower sv (a restarted server may roll back)', () => {
+  it('a second welcome on the same connection with a lower sv is ignored', () => {
     let s = apply(initialHostState(), welcome(hostSnapshot({ sv: 50 })));
     s = apply(s, welcome(hostSnapshot({ sv: 49, locked: true })));
+    expect(s.sv).toBe(50);
+    expect(s.snapshot?.locked).toBe(false);
+  });
+
+  it('a welcome older than a host.state from the same socket is ignored', () => {
+    const s = run(
+      welcome(hostSnapshot({ sv: 10 })),
+      { type: 'connection', status: 'reconnecting' },
+      { type: 'connection', status: 'open' },
+      hostState(hostSnapshot({ sv: 11, locked: true })),
+      welcome(hostSnapshot({ sv: 10, locked: false })),
+    );
+    expect(s.sv).toBe(11);
+    expect(s.snapshot?.locked).toBe(true);
+  });
+
+  it('the first welcome of a new connection wins even with a lower sv (a restarted server may roll back)', () => {
+    const s = run(
+      welcome(hostSnapshot({ sv: 50 })),
+      { type: 'connection', status: 'reconnecting' },
+      { type: 'connection', status: 'open' },
+      welcome(hostSnapshot({ sv: 49, locked: true })),
+    );
     expect(s.sv).toBe(49);
     expect(s.snapshot?.locked).toBe(true);
+    // ... and then it competes with what this connection delivers.
+    expect(apply(s, welcome(hostSnapshot({ sv: 48 }))).sv).toBe(49);
+  });
+
+  it('a reset (new sign-in, new connection) starts a new race too', () => {
+    const s = run(
+      welcome(hostSnapshot({ sv: 50 })),
+      { type: 'reset', connection: 'connecting' },
+      welcome(hostSnapshot({ sv: 3 })),
+    );
+    expect(s.sv).toBe(3);
   });
 
   it('folds a mix of actions and messages', () => {

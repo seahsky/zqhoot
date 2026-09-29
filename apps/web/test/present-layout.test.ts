@@ -6,10 +6,13 @@ import {
   cloudLayout,
   fitFontUnits,
   flowedLines,
+  WALL_FONTS_U,
   linesFor,
+  lobbyWallHeightU,
   nameWall,
   paginateCards,
   textWidthEm,
+  wallMetrics,
 } from '../src/screens/present/layout.ts';
 import { formatPin, joinLink, percentOf, sizeWords, wordUnits } from '../src/state/charts.ts';
 import { names } from '../src/dev/fixtures/hostSnapshots.ts';
@@ -79,60 +82,201 @@ describe('question text fitting', () => {
 });
 
 describe('the nickname wall', () => {
-  const W = 160;
-  const H = 46;
+  const W = CONTENT_WIDTH_U;
+  // What the lobby really gives it: a QR code, a short quiz title, 100% text size.
+  const H = lobbyWallHeightU({
+    title: 'Friday night trivia',
+    joinUrl: 'zqhoot.example.com/join',
+    scale: 1,
+    hasQr: true,
+  });
 
-  it('a small room gets the big font and shows everyone', () => {
+  /** Rows `chips` take at `fontU`, packed left to right the way the browser wraps them. */
+  function rowsNeeded(nameList: readonly string[], fontU: number, moreEm = 0): number {
+    const m = wallMetrics(fontU);
+    const widths = nameList.map(
+      (n) => textWidthEm(Array.from(n).slice(0, 16).join('')) * fontU * 1.08 + 2 * m.padXU,
+    );
+    if (moreEm > 0) widths.push(moreEm * fontU * 1.15 + 2 * m.padXU + 1);
+    let rows = widths.length > 0 ? 1 : 0;
+    let x = 0;
+    for (const w of widths) {
+      if (x > 0 && x + m.gapXU + w > W) {
+        rows += 1;
+        x = 0;
+      }
+      x += (x > 0 ? m.gapXU : 0) + w;
+    }
+    return rows;
+  }
+
+  const rowsAvailable = (fontU: number) => {
+    const m = wallMetrics(fontU);
+    return Math.floor((H + m.gapYU) / (m.rowHeightU + m.gapYU));
+  };
+
+  const everyoneFitsAt = (nameList: readonly string[], fontU: number) =>
+    rowsNeeded(nameList, fontU) <= rowsAvailable(fontU);
+
+  it('a small room gets the biggest name size and shows everyone', () => {
     const wall = nameWall(names(12), W, H);
-    expect(wall.fontU).toBeGreaterThanOrEqual(5);
+    expect(wall.fontU).toBe(5);
     expect(wall.more).toBe(0);
     expect(wall.shown).toBe(12);
   });
 
-  it('the font steps down as the room grows, never below 4.3u', () => {
+  it('steps from 5u down to the 3.5u floor as the room grows', () => {
+    expect(WALL_FONTS_U[0]).toBe(5);
+    expect(WALL_FONTS_U.at(-1)).toBe(3.5);
     let last = Infinity;
-    for (const n of [10, 40, 80, 150, 400]) {
+    const sizes = new Set<number>();
+    for (const n of [5, 20, 40, 60, 80, 100, 150, 250, 400]) {
       const wall = nameWall(names(n), W, H);
       expect(wall.fontU).toBeLessThanOrEqual(last);
-      expect(wall.fontU).toBeGreaterThanOrEqual(4.3);
+      expect(wall.fontU).toBeGreaterThanOrEqual(3.5);
       last = wall.fontU;
+      sizes.add(wall.fontU);
+    }
+    // The whole scale is used: it is not one jump from big to small.
+    expect(sizes.size).toBeGreaterThanOrEqual(4);
+    expect(last).toBe(3.5);
+  });
+
+  it('fits more names to a row as the type shrinks', () => {
+    const perRow = (fontU: number) => {
+      const m = wallMetrics(fontU);
+      return W / (textWidthEm('Amara') * fontU * 1.08 + 2 * m.padXU + m.gapXU);
+    };
+    for (let i = 1; i < WALL_FONTS_U.length; i++) {
+      expect(perRow(WALL_FONTS_U[i] as number)).toBeGreaterThan(
+        perRow(WALL_FONTS_U[i - 1] as number),
+      );
     }
   });
 
-  it('400 names: what is drawn fits the box and the rest becomes "+N more"', () => {
-    const all = names(400);
-    const wall = nameWall(all, W, H);
-    expect(wall.more).toBeGreaterThan(0);
-    expect(wall.shown + wall.more).toBe(400);
-    // The "+N more" cell takes the last slot.
-    expect(wall.shown).toBe(wall.rows * wall.cols - 1);
-    expect(wall.rows * wall.rowHeightU).toBeLessThanOrEqual(H + 1e-6);
-    expect(wall.cols * wall.colWidthU).toBeLessThanOrEqual(W + 1e-6);
+  it('400 names: at least 60 are drawn, at the floor, and the rest becomes "+N more"', () => {
+    const wall = nameWall(names(400), W, H);
+    expect(wall.fontU).toBe(3.5);
+    expect(wall.shown).toBeGreaterThanOrEqual(60);
+    expect(wall.more).toBe(400 - wall.shown);
   });
 
-  it('a room that fits shows everyone, at the largest size that fits', () => {
-    for (const n of [5, 20, 60, 100]) {
-      const wall = nameWall(names(n), W, H);
-      if (wall.more === 0) expect(wall.rows * wall.cols).toBeGreaterThanOrEqual(n);
+  it('what is drawn, and the "+N more" chip, fit the rows the box has', () => {
+    for (const n of [12, 60, 130, 250, 400, 1000]) {
+      const all = names(n);
+      const wall = nameWall(all, W, H);
+      const moreEm = wall.more > 0 ? textWidthEm(`+${wall.more} more`) : 0;
+      expect(
+        rowsNeeded(all.slice(0, wall.shown), wall.fontU, moreEm),
+        `${n} names`,
+      ).toBeLessThanOrEqual(wall.rows);
+      expect(wall.rows).toBe(rowsAvailable(wall.fontU));
+      expect(wall.rows * (wall.rowHeightU + wall.gapYU) - wall.gapYU).toBeLessThanOrEqual(H + 1e-6);
     }
+  });
+
+  it('"+N more" appears only when even the smallest size overflows', () => {
+    for (const n of [5, 20, 60, 100, 150, 200, 300, 400, 800]) {
+      const all = names(n);
+      const wall = nameWall(all, W, H);
+      if (wall.more > 0) {
+        expect(wall.fontU).toBe(3.5);
+        expect(everyoneFitsAt(all, 3.5), `${n} names at the floor`).toBe(false);
+      } else {
+        expect(wall.shown).toBe(n);
+        expect(everyoneFitsAt(all, wall.fontU), `${n} names at ${wall.fontU}u`).toBe(true);
+      }
+    }
+  });
+
+  it('takes the largest size at which everyone fits', () => {
+    for (const n of [5, 20, 60, 100, 150, 200, 300]) {
+      const all = names(n);
+      const wall = nameWall(all, W, H);
+      if (wall.more > 0) continue;
+      const next = WALL_FONTS_U[WALL_FONTS_U.indexOf(wall.fontU) - 1];
+      if (next !== undefined) {
+        expect(everyoneFitsAt(all, next), `${n} names at ${next}u`).toBe(false);
+      }
+    }
+  });
+
+  it('more room, or shorter names, never shrink the type', () => {
+    const all = names(150);
+    expect(nameWall(all, W, H + 10).fontU).toBeGreaterThanOrEqual(nameWall(all, W, H).fontU);
+    const short = all.map((n) => n.slice(0, 4));
+    expect(nameWall(short, W, H).fontU).toBeGreaterThanOrEqual(nameWall(all, W, H).fontU);
   });
 
   it('wide characters take more room', () => {
     const wide = nameWall(
-      Array.from({ length: 60 }, () => '日本語日本語日本語日本語'),
+      Array.from({ length: 200 }, () => '日本語日本語日本語日本語'),
       W,
       H,
     );
     const narrow = nameWall(
-      Array.from({ length: 60 }, () => 'abcdefgh'),
+      Array.from({ length: 200 }, () => 'abcdefgh'),
       W,
       H,
     );
-    expect(wide.cols).toBeLessThanOrEqual(narrow.cols);
+    expect(wide.shown).toBeLessThan(narrow.shown);
+  });
+
+  it('a name is measured at no more than 16 characters, like the limit', () => {
+    const long = nameWall(['x'.repeat(200)], W, H);
+    expect(long).toMatchObject({ shown: 1, more: 0, fontU: 5 });
   });
 
   it('an empty room is an empty wall', () => {
     expect(nameWall([], W, H)).toMatchObject({ shown: 0, more: 0 });
+  });
+});
+
+describe('the height the lobby leaves the wall', () => {
+  const base = { title: 'Friday night trivia', joinUrl: 'zqhoot.example.com/join', hasQr: true };
+
+  it('is about 58u at 100% text size: the join block, a gap and a little slack', () => {
+    const h = lobbyWallHeightU({ ...base, scale: 1 });
+    expect(h).toBeGreaterThan(55);
+    expect(h).toBeLessThan(60);
+  });
+
+  it('shrinks as the text-size control grows the PIN and the join line', () => {
+    const heights = [1, 1.25, 1.5].map((scale) => lobbyWallHeightU({ ...base, scale }));
+    expect(heights[1]).toBeLessThan(heights[0] as number);
+    expect(heights[2]).toBeLessThan(heights[1] as number);
+  });
+
+  it('gives up a line for a long title, but never more than the two lines it is cut to', () => {
+    const one = lobbyWallHeightU({ ...base, scale: 1 });
+    const two = lobbyWallHeightU({ ...base, title: 'A long title '.repeat(6), scale: 1 });
+    const many = lobbyWallHeightU({ ...base, title: 'A long title '.repeat(9), scale: 1 });
+    expect(two).toBeLessThan(one);
+    expect(many).toBe(two);
+    expect(one - two).toBeCloseTo(5.75, 1);
+  });
+
+  it('gives up a line for a join address that wraps', () => {
+    const address = `${'sub.'.repeat(30)}example.com`;
+    expect(lobbyWallHeightU({ ...base, joinUrl: address, scale: 1 })).toBeLessThan(
+      lobbyWallHeightU({ ...base, scale: 1 }),
+    );
+  });
+
+  it('gives up a line when joining is locked and the badge sits under the count', () => {
+    const open = lobbyWallHeightU({ ...base, scale: 1 });
+    const locked = lobbyWallHeightU({ ...base, scale: 1, locked: true });
+    expect(locked).toBeLessThan(open);
+    // At 150% the PIN is taller than the count and its badge, which then cost nothing.
+    expect(lobbyWallHeightU({ ...base, scale: 1.5, locked: true })).toBe(
+      lobbyWallHeightU({ ...base, scale: 1.5 }),
+    );
+  });
+
+  it('never leaves the wall more than the QR code and the gap allow', () => {
+    const withQr = lobbyWallHeightU({ ...base, scale: 1 });
+    expect(withQr).toBeLessThanOrEqual(CONTENT_HEIGHT_U - 27 - 2);
+    expect(lobbyWallHeightU({ ...base, hasQr: false, scale: 1 })).toBeGreaterThanOrEqual(withQr);
   });
 });
 

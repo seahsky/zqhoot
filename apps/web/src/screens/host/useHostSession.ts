@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { Dispatch } from 'react';
 import { ClientMessage, PROTOCOL_VERSION } from '@zqhoot/protocol';
+import type { HostSnapshot } from '@zqhoot/protocol';
 import type { HostAuth } from '../../auth/session.ts';
 import { getRuntimeConfig } from '../../config/runtime.ts';
 import { Connection } from '../../net/connection.ts';
@@ -8,6 +9,7 @@ import { hostReducer, initialHostState } from '../../state/host.ts';
 import type { HostAction, HostState } from '../../state/host.ts';
 import { IDLE_DRIVER, driverQuestionOf, driverStep } from '../../state/driver.ts';
 import type { DriverInput, DriverState } from '../../state/driver.ts';
+import { hostMayReconnect } from '../../state/reconnect.ts';
 
 /** How often the driver looks at the clock. Deadlines are seconds long; this is plenty. */
 const DRIVER_TICK_MS = 250;
@@ -52,6 +54,8 @@ export function useHostSession(o: {
   const driver = useRef<DriverState>(IDLE_DRIVER);
   // Bumped after a refreshed sign-in, to open a new connection with the new token.
   const [epoch, setEpoch] = useState(0);
+  // The connection outlives renders, so its planned-reconnect check reads the phase through a ref.
+  const phaseRef = useRef<HostSnapshot['phase'] | null>(null);
 
   const serverNow = useCallback(() => conn.current?.clock.serverNow(Date.now()) ?? Date.now(), []);
 
@@ -82,6 +86,8 @@ export function useHostSession(o: {
       },
       onMessage: (msg) => dispatch({ type: 'message', msg }),
       onStatus: (status) => dispatch({ type: 'connection', status }),
+      // ADR-0008: the proactive reconnect belongs between questions, not while one is open.
+      canReconnectNow: () => hostMayReconnect(phaseRef.current),
     });
     conn.current = c;
     driver.current = IDLE_DRIVER;
@@ -122,6 +128,9 @@ export function useHostSession(o: {
   }, []);
 
   const snapshot = state.snapshot;
+  useEffect(() => {
+    phaseRef.current = snapshot?.phase ?? null;
+  }, [snapshot]);
   useEffect(() => {
     if (!drive) return;
     const q = snapshot?.question;

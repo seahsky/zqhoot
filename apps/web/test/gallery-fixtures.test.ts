@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LIMITS, PublicQuestion, ServerMessage } from '@zqhoot/protocol';
-import { SCREENS, skipsHorizontalScrollCheck } from '../src/dev/manifest.ts';
+import { MATRIX_SCREENS, SCREENS, skipsHorizontalScrollCheck } from '../src/dev/manifest.ts';
 import * as Q from '../src/dev/fixtures/questions.ts';
 import { FIXTURE_MESSAGES, PLAY_FIXTURES } from '../src/dev/fixtures/player.ts';
 import { announcementFor } from '../src/screens/play/announce.ts';
@@ -94,6 +94,17 @@ describe('gallery manifest', () => {
     expect(skipsHorizontalScrollCheck('present-question')).toBe(true);
     expect(skipsHorizontalScrollCheck('play-lobby')).toBe(false);
     expect(skipsHorizontalScrollCheck('host-lobby')).toBe(false);
+  });
+
+  it('keeps the probe screens out of the matrix but not out of the scroll check', () => {
+    const probes = SCREENS.filter((s) => s.group === 'test').map((s) => s.id as string);
+    expect(probes).toEqual(['test-overflow']);
+    for (const id of probes) {
+      expect(MATRIX_SCREENS.map((s) => s.id as string)).not.toContain(id);
+      expect(skipsHorizontalScrollCheck(id)).toBe(false);
+    }
+    expect(MATRIX_SCREENS.length).toBe(SCREENS.length - probes.length);
+    expect(MATRIX_SCREENS.every((s) => s.group !== 'test')).toBe(true);
   });
 
   it('has a fixture for every play screen and none that are unlisted', () => {

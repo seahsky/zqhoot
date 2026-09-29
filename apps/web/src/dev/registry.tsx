@@ -39,6 +39,21 @@ function JoinNickname({ initial, error }: { initial: string; error?: string }) {
   );
 }
 
+/**
+ * Half as wide again as the viewport, at every viewport. That is the size that hid the first
+ * version of the scroll check: mobile emulation widens `window.innerWidth` to fit an over-wide
+ * page (up to four times the device width), so a check against it passes here on the phones and
+ * the tablet. If the check ever stops failing on this screen it has stopped checking anything.
+ */
+function OverflowProbe() {
+  return (
+    <main id="main" tabIndex={-1}>
+      <h1>Overflow probe</h1>
+      <div style={{ width: '150vw', height: 48, background: 'currentColor' }} />
+    </main>
+  );
+}
+
 const Play = ({ fixture }: { fixture: PlayFixtureId }) => (
   <PlayScreen state={PLAY_FIXTURES[fixture]} onAnswer={sent} onLeave={noop} onReload={noop} />
 );
@@ -121,4 +136,6 @@ export const RENDERERS: Record<ScreenId, () => ReactNode> = {
   'edit-question-rating': () => <EditorFixture fixture={{ kind: 'question', type: 'rating' }} />,
   'edit-errors': () => <EditorFixture fixture={{ kind: 'errors' }} />,
   'edit-conflict': () => <EditorFixture fixture={{ kind: 'conflict' }} />,
+
+  'test-overflow': () => <OverflowProbe />,
 };

@@ -1,21 +1,18 @@
 import type { CSSProperties } from 'react';
 import { formatPin, groupDigits } from '../../state/charts.ts';
 import type { PresenterView } from '../../state/presenterView.ts';
-import { CONTENT_HEIGHT_U, CONTENT_WIDTH_U, nameWall } from './layout.ts';
+import { CONTENT_WIDTH_U, lobbyWallHeightU, nameWall } from './layout.ts';
 import s from './Present.module.css';
 
 type LobbyView = Extract<PresenterView, { screen: 'lobby' }>;
 
 const style = (vars: Record<string, string | number>) => vars as CSSProperties;
 
-/** Height the join block takes (title, URL, PIN label and PIN), and the wall heading under it. */
-const TOP_U = 30;
-const WALL_HEADING_U = 7;
-
 /**
  * The room fills while the host waits: the address and PIN big enough for the back row, a QR
- * code for phones, and every nickname as it arrives (newest first). The wall steps its font
- * down as the room grows and says "+N more" rather than overflowing.
+ * code for phones, and every nickname as it arrives (newest first). The names take the space
+ * under the join block, at the largest size at which all of them fit (5u down to 3.5u, so
+ * hundreds stay readable); only when even that overflows does the oldest end in "+N more".
  */
 export function LobbyView({
   view,
@@ -30,7 +27,13 @@ export function LobbyView({
   qrAlt: string;
   scale: number;
 }) {
-  const wallHeightU = CONTENT_HEIGHT_U - (TOP_U + WALL_HEADING_U) * Math.max(1, scale * 0.9) - 6;
+  const wallHeightU = lobbyWallHeightU({
+    title: view.quizTitle,
+    joinUrl,
+    scale,
+    hasQr: qrSrc !== null,
+    locked: view.locked,
+  });
   const wall = nameWall(view.names, CONTENT_WIDTH_U, wallHeightU);
   const count = view.names.length;
 
@@ -44,47 +47,48 @@ export function LobbyView({
           <p className={s.joinLine}>
             Join at <strong data-testid="join-url">{joinUrl}</strong>
           </p>
-          <p className={s.pinLabel}>Game PIN</p>
-          <p
-            className={s.pin}
-            data-testid="pin"
-            aria-label={`Game PIN ${view.pin.split('').join(' ')}`}
-          >
-            {formatPin(view.pin)}
-          </p>
+          <div className={s.pinRow}>
+            <div>
+              <p className={s.pinLabel}>PIN</p>
+              <p
+                className={s.pin}
+                data-testid="pin"
+                aria-label={`PIN ${view.pin.split('').join(' ')}`}
+              >
+                {formatPin(view.pin)}
+              </p>
+            </div>
+            <h2 className={s.roomStatus}>
+              <span className={s.roomCount} data-testid="player-count">
+                {groupDigits(count)} {count === 1 ? 'player' : 'players'}
+              </span>
+              {view.locked && <span className={s.lockBadge}>Joining locked</span>}
+              <span className={s.wallHint}>Press Space to start</span>
+            </h2>
+          </div>
         </div>
         {qrSrc && <img className={s.qr} src={qrSrc} alt={qrAlt} data-testid="qr" />}
       </div>
 
-      <div className={s.wall}>
-        <h2 className={s.wallHeading}>
-          <span data-testid="player-count">
-            {groupDigits(count)} {count === 1 ? 'player' : 'players'}
-          </span>
-          {view.locked && <span className={s.lockBadge}>Joining locked</span>}
-          <span className={s.wallHint}>Press Space to start</span>
-        </h2>
-        <ul
-          className={s.names}
-          aria-label="Players who have joined"
-          data-testid="name-wall"
-          style={style({
-            '--rows': wall.rows,
-            '--row-h': `calc(var(--u) * ${wall.rowHeightU.toFixed(2)})`,
-            '--col-w': `calc(var(--u) * ${wall.colWidthU.toFixed(2)})`,
-            '--fs': wall.fontU,
-          })}
-        >
-          {view.names.slice(0, wall.shown).map((name, i) => (
-            <li key={`${i}-${name}`} className={s.name}>
-              {name}
-            </li>
-          ))}
-          {wall.more > 0 && (
-            <li className={`${s.name} ${s.more}`}>+{groupDigits(wall.more)} more</li>
-          )}
-        </ul>
-      </div>
+      <ul
+        className={s.names}
+        aria-label="Players who have joined"
+        data-testid="name-wall"
+        style={style({
+          '--fs': wall.fontU,
+          '--row-h': `calc(var(--u) * ${wall.rowHeightU.toFixed(3)})`,
+          '--pad-x': `calc(var(--u) * ${wall.padXU.toFixed(3)})`,
+          '--gap-x': `calc(var(--u) * ${wall.gapXU.toFixed(3)})`,
+          '--gap-y': `calc(var(--u) * ${wall.gapYU.toFixed(3)})`,
+        })}
+      >
+        {view.names.slice(0, wall.shown).map((name, i) => (
+          <li key={`${i}-${name}`} className={s.name}>
+            {name}
+          </li>
+        ))}
+        {wall.more > 0 && <li className={`${s.name} ${s.more}`}>+{groupDigits(wall.more)} more</li>}
+      </ul>
     </section>
   );
 }

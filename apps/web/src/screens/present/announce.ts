@@ -9,7 +9,7 @@ export function announcementFor(view: PresenterView): string {
     case 'connecting':
       return 'Connecting';
     case 'lobby':
-      return `Lobby. Game PIN ${view.pin.split('').join(' ')}. ${view.names.length} players have joined.`;
+      return `Lobby. PIN ${view.pin.split('').join(' ')}. ${view.names.length} players have joined.`;
     case 'get-ready':
       return `Question ${view.q.index + 1} of ${view.q.total}. Options open in a moment.`;
     case 'question':

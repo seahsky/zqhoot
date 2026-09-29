@@ -1,3 +1,4 @@
+import { groupDigits } from '../../state/charts.ts';
 import type { SizedWord } from '../../state/charts.ts';
 
 /**
@@ -115,64 +116,130 @@ export function flowedLines(
 
 export interface WallLayout {
   fontU: number;
-  rows: number;
-  cols: number;
-  colWidthU: number;
+  /** Height of one name, and the padding and gaps around it, all in u. */
   rowHeightU: number;
-  /** Names drawn. When some are left out the last cell says "+N more". */
+  padXU: number;
+  gapXU: number;
+  gapYU: number;
+  /** Rows the box holds at this size. */
+  rows: number;
+  /** Names drawn. When some are left out the last chip says "+N more". */
   shown: number;
   more: number;
 }
 
-/** Steps from the biggest legible size to the ADR-0016 floor for essential text. */
-const WALL_FONTS_U = [6.5, 6, 5.5, 5, 4.6, 4.3];
-const WALL_PAD_X_U = 2.4;
-const WALL_GAP_X_U = 1.4;
-const WALL_ROW_GAP_U = 0.8;
-const WALL_LINE = 1.2;
-const WALL_PAD_Y_U = 0.9;
+/**
+ * Name sizes, from the biggest to the ADR-0016 floor for non-essential text (a player only has
+ * to spot their own name). The wall takes the largest one at which every name fits.
+ */
+export const WALL_FONTS_U = [5, 4.6, 4.3, 4, 3.75, 3.5];
+const WALL_LINE = 1.15;
+/** Longest nickname in graphemes; the wall never has to fit more than this of a name. */
 const MAX_NAME_GRAPHEMES = 16;
+/** The model is already pessimistic (`charEm`); this covers hinting and kerning. */
+const WALL_WIDTH_SLACK = 1.08;
 
-function nameEm(names: readonly string[]): number {
-  let widest = 0;
-  for (const name of names) {
-    widest = Math.max(widest, textWidthEm(Array.from(name).slice(0, MAX_NAME_GRAPHEMES).join('')));
+/** Chip metrics scale with the type: a smaller name needs less air around it. */
+export function wallMetrics(fontU: number) {
+  return {
+    padXU: fontU * 0.3,
+    rowHeightU: fontU * (WALL_LINE + 0.18),
+    gapXU: fontU * 0.2,
+    gapYU: fontU * 0.16,
+  };
+}
+
+/** Chips placed left to right, wrapping to a new row when the next one would not fit. */
+class Shelf {
+  #row = 0;
+  #x = 0;
+
+  constructor(
+    private readonly widthU: number,
+    private readonly gapU: number,
+  ) {}
+
+  /** The row a chip of width `w` would land in; nothing is placed. */
+  rowFor(w: number): number {
+    return this.#x > 0 && this.#x + this.gapU + w > this.widthU ? this.#row + 1 : this.#row;
   }
-  return widest;
+
+  add(w: number): void {
+    const row = this.rowFor(w);
+    this.#x = row === this.#row && this.#x > 0 ? this.#x + this.gapU + w : w;
+    this.#row = row;
+  }
 }
 
 /**
- * Flowing columns, largest font first: the biggest step at which every name fits, else the
- * smallest step with as many names as fit and the rest counted in "+N more" (which takes one
- * cell). `names` are newest first, so the ones dropped are the oldest.
+ * Names are laid out as flowing chips, left to right and row after row, newest first (`names`
+ * arrive that way), so a short name costs its own width rather than a column's. The browser does
+ * the same with `flex-wrap`, and the widths here are pessimistic, so it never needs more rows
+ * than this predicts.
+ *
+ * The largest size at which every name fits is used. Only when even the floor overflows are the
+ * oldest names left out and counted in "+N more", which takes the place of the last chip.
  */
 export function nameWall(names: readonly string[], widthU: number, heightU: number): WallLayout {
-  const widestEm = nameEm(names);
+  const ems = names.map((n) => textWidthEm(Array.from(n).slice(0, MAX_NAME_GRAPHEMES).join('')));
+  const moreEm = textWidthEm(`+${groupDigits(names.length)} more`);
   let last: WallLayout | null = null;
   for (const fontU of WALL_FONTS_U) {
-    // 8% over the model: hinting and kerning move real glyphs by a pixel or two.
-    const colWidthU = widestEm * fontU * 1.08 + 2 * WALL_PAD_X_U;
-    const rowHeightU = fontU * WALL_LINE + 2 * WALL_PAD_Y_U;
-    const cols = Math.max(1, Math.floor((widthU + WALL_GAP_X_U) / (colWidthU + WALL_GAP_X_U)));
-    const rows = Math.max(
-      1,
-      Math.floor((heightU + WALL_ROW_GAP_U) / (rowHeightU + WALL_ROW_GAP_U)),
-    );
-    const capacity = rows * cols;
-    const fits = names.length <= capacity;
-    const shown = fits ? names.length : Math.max(0, capacity - 1);
-    last = {
-      fontU,
-      rows,
-      cols,
-      colWidthU: Math.min(colWidthU, (widthU - (cols - 1) * WALL_GAP_X_U) / cols),
-      rowHeightU,
-      shown,
-      more: names.length - shown,
-    };
-    if (fits) return last;
+    const m = wallMetrics(fontU);
+    const rows = Math.max(1, Math.floor((heightU + m.gapYU) / (m.rowHeightU + m.gapYU)));
+    const widths = ems.map((em) => em * fontU * WALL_WIDTH_SLACK + 2 * m.padXU);
+    // The "+N more" chip is heavier and outlined, so it gets a little more than its text.
+    const moreWidth = moreEm * fontU * 1.15 + 2 * m.padXU + 1;
+
+    const shelf = new Shelf(widthU, m.gapXU);
+    let fitting = 0;
+    let beforeMore = 0;
+    for (const w of widths) {
+      if (shelf.rowFor(moreWidth) < rows) beforeMore = fitting;
+      if (shelf.rowFor(w) >= rows) break;
+      shelf.add(w);
+      fitting += 1;
+    }
+    if (fitting === names.length) return { fontU, ...m, rows, shown: fitting, more: 0 };
+    last = { fontU, ...m, rows, shown: beforeMore, more: names.length - beforeMore };
   }
   return last as WallLayout;
+}
+
+/** The QR code and the gap between it and the join block (Present.module.css). */
+const QR_U = 27;
+const QR_GAP_U = 4;
+/** Gap between the join block and the wall (`.screen`). */
+const SCREEN_GAP_U = 2;
+/** Room kept in hand: real glyphs and line boxes are never exactly what the model says. */
+const WALL_SLACK_U = 1.5;
+/** A long quiz title is cut to this many lines so it cannot squeeze the wall. */
+export const TITLE_MAX_LINES = 2;
+
+/**
+ * Height in u the name wall can use under the join block: the stage's content height less the
+ * block and a little slack. The block is the quiz title (5u, clamped to two lines), the join
+ * line (4.5u, may wrap) and the row of PIN (label and 10u digits) with the room's count beside
+ * it. The heights are measured from the rendered page at 100%, 125% and 150%: the join line and
+ * the PIN grow with `scale`, the count does not, and the QR code sets a floor.
+ */
+export function lobbyWallHeightU(o: {
+  title: string;
+  joinUrl: string;
+  scale: number;
+  hasQr: boolean;
+  /** "Joining locked" adds a line to the count. */
+  locked?: boolean;
+}): number {
+  const joinWidthU = CONTENT_WIDTH_U - (o.hasQr ? QR_U + QR_GAP_U : 0);
+  const titleLines = Math.min(TITLE_MAX_LINES, linesFor(o.title, 5, joinWidthU));
+  const urlLines = linesFor(`Join at ${o.joinUrl}`, 4.5 * o.scale, joinWidthU);
+  const pinRow = Math.max(4.8 + 10.5 * o.scale, 10.4 + (o.locked ? 6.1 : 0));
+  const block = Math.max(
+    o.hasQr ? QR_U : 0,
+    5.75 * titleLines + 0.6 + 5.4 * o.scale * urlLines + 0.6 + pinRow,
+  );
+  return CONTENT_HEIGHT_U - block - SCREEN_GAP_U - WALL_SLACK_U;
 }
 
 // ---------------------------------------------------------------------------

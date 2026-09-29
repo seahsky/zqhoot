@@ -94,7 +94,7 @@ test.describe('join and play against a scripted server', () => {
     playerServer(server, () => phase);
 
     await page.goto('/join?pin=123456');
-    await expect(page.getByLabel('Game PIN')).toHaveValue('123456');
+    await expect(page.getByLabel('PIN', { exact: true })).toHaveValue('123456');
     await page.getByRole('button', { name: 'Continue' }).click();
 
     await expect(page.getByRole('heading', { name: 'Pick a nickname' })).toBeVisible();
@@ -480,7 +480,9 @@ test.describe('join and play against a scripted server', () => {
     await server.attach(page);
     await page.goto('/play');
     await expect(page).toHaveURL(/\/join$/);
-    await expect(page.getByRole('heading', { name: 'Enter the game PIN' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Enter the PIN from the big screen' }),
+    ).toBeVisible();
   });
 
   test('a taken nickname is announced inline and focus returns to the field', async ({ page }) => {
@@ -506,6 +508,63 @@ test.describe('join and play against a scripted server', () => {
     await expect(page).toHaveURL(/\/join/);
   });
 
+  test('a refused nickname says why, taking the reason from the error message', async ({
+    page,
+  }) => {
+    const server = new ScriptedServer();
+    await server.attach(page);
+    await mockLookup(page);
+    let reason = 'inappropriate';
+    server.onClient = (msg, ws) => {
+      if (msg.type === 'join') {
+        server.send(ws, { type: 'error', code: 'nickname-invalid', message: reason, ref: 'join' });
+      }
+    };
+    await page.goto('/join?pin=123456');
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    const alert = page.getByRole('alert');
+    const expected: Array<[string, RegExp]> = [
+      ['inappropriate', /has a word that isn't allowed/],
+      ['too-long', /too long/],
+      ['invalid-characters', /characters in that nickname aren't allowed/],
+      ['too-short', /at least 2 characters/],
+    ];
+    for (const [why, text] of expected) {
+      reason = why;
+      await page.getByLabel('Nickname').fill(`Kim ${why}`.slice(0, 16));
+      await page.getByRole('button', { name: 'Join' }).click();
+      await expect(alert).toContainText(text);
+      await expect(page.getByLabel('Nickname')).toBeFocused();
+    }
+  });
+
+  test('the counter warns before submitting when emoji push a name over the byte cap', async ({
+    page,
+  }) => {
+    const sent: unknown[] = [];
+    const server = new ScriptedServer();
+    await server.attach(page);
+    await mockLookup(page);
+    server.onClient = (msg) => sent.push(msg);
+    await page.goto('/join?pin=123456');
+    await page.getByRole('button', { name: 'Continue' }).click();
+
+    const nickname = page.getByLabel('Nickname');
+    const flags = (n: number) => '\u{1F1F3}\u{1F1FF}'.repeat(n);
+    // 12 flags are 12 graphemes and exactly 96 bytes; a 13th is still far under 16 graphemes.
+    await nickname.fill(flags(12));
+    await expect(page.getByText('12 / 16', { exact: true })).toBeVisible();
+    await nickname.fill(flags(13));
+    await expect(page.getByText(/^13 \/ 16 \(too long/)).toBeVisible();
+
+    await page.getByRole('button', { name: 'Join' }).click();
+    await expect(page.getByRole('alert')).toContainText('too long');
+    await expect(nickname).toBeFocused();
+    // The check is local: nothing went to the server.
+    expect(sent).toEqual([]);
+  });
+
   test('an unknown PIN is announced inline, and a locked game is refused', async ({ page }) => {
     const server = new ScriptedServer();
     await server.attach(page);
@@ -513,7 +572,7 @@ test.describe('join and play against a scripted server', () => {
     await page.goto('/join?pin=000000');
     await page.getByRole('button', { name: 'Continue' }).click();
     await expect(page.getByRole('alert')).toContainText('No game has that PIN');
-    await expect(page.getByLabel('Game PIN')).toBeFocused();
+    await expect(page.getByLabel('PIN', { exact: true })).toBeFocused();
 
     await page.unroute('**/api/join/*');
     await mockLookup(page, { joinable: false, reason: 'locked' });
@@ -524,7 +583,7 @@ test.describe('join and play against a scripted server', () => {
   test('the PIN field takes digits only, at most six', async ({ page }) => {
     await new ScriptedServer().attach(page);
     await page.goto('/join');
-    const pin = page.getByLabel('Game PIN');
+    const pin = page.getByLabel('PIN', { exact: true });
     await expect(pin).toHaveAttribute('inputmode', 'numeric');
     await expect(pin).toHaveAttribute('autocomplete', 'off');
     await pin.fill('12ab34-5678');
