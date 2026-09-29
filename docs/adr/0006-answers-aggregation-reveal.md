@@ -21,14 +21,14 @@ Host clients (control and presenter) poll `host.stats` once per second while the
 - the rating histogram and average,
 - open-ended responses after the host's cursor, 100 per page.
 
-This replaces a push per answer: 400 answers become about 15 polls, and the presenter redraws at most once a second, which WCAG 2.2.2 prefers anyway. Hosts also use the count to send `host.close {reason:'all-answered'}` when every connected, non-kicked player has answered.
+This replaces a push per answer: 400 answers become about 15 polls, and the presenter redraws at most once a second, which WCAG 2.2.2 prefers anyway. Hosts also use the count to send `host.close {reason:'all-answered'}` when every connected, non-kicked player has answered: `stats.expected` counts the non-kicked players who are connected or have already answered, and the host closes when `answered >= expected`. A player who answered and then dropped still counts; one who went offline without answering does not hold the question open.
 
 ### Reveal
 
 `host.close` (or the VM timer):
 
 1. Engine transition: `question → revealing`, `closedAt = now`, META written with a version check.
-2. Wait the adapter's settle interval (Lambda 1,000 ms, VM 0). An answer handler that passed its META check before the close commits its write within that window. One that reads META after the close is rejected as `too-late`, even if API Gateway received it slightly earlier; this edge case only arises on an early manual close.
+2. Wait the adapter's settle interval (Lambda 1,000 ms, VM 0). An answer handler that passed its META check before the close commits its write within that window. One that reads META after the close is rejected as `too-late`, even if API Gateway received it slightly earlier; this edge case only arises on an early manual close. A retried reveal (a second Next during the settle) waits out the rest of the interval, measured from `closedAt`.
 3. Load responses, players and the scoreboard. The engine computes the `QuestionResult` (host view), each player's `PlayerOutcome` (points, streak bonus, new total, rank, streak), the new scoreboard (`appliedThrough = i`), and the outbound messages.
 4. Write `RESULT#i`, SCORES (version-checked), then META `revealing → reveal`. If a step fails, META stays `revealing`. The next host command re-runs steps 3-4, and `appliedThrough` prevents double scoring.
 
@@ -43,3 +43,9 @@ Open-ended results are bounded so every message fits API Gateway's 128 KB limit 
 - The answer path costs 2 GetItems + 1 PutItem + 1 `PostToConnection`, about 20-50 ms warm.
 - On AWS, reveal adds about 1 s after close. The presenter fills it with a "Time's up" beat.
 - Duplicate submissions cost a WCU each ([realtime-patterns](../research/realtime-patterns.md) 2). The per-connection limits in [ADR-0013](0013-security.md) cap that.
+
+## Amendment (2026-09-29, final audit)
+
+- Timed questions close at `deadline + answerGraceMs`, not at the deadline. Host clients send the timer close at that instant. The service holds an earlier timer close until then: the VM leaves it to its scheduler, and Lambda waits with a bounded sleep. Closing at the bare deadline refused answers inside the ADR-0005 grace window as `too-late`.
+- A host client resends a timer close that got no response, with backoff, and after every reconnect. `host.close` is idempotent through its `questionIndex`.
+- Each `host.stats` poll also reads the session's connection items, to compute `expected`: one extra Query per poll per host client.

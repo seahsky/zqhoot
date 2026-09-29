@@ -81,7 +81,7 @@ Dependency direction: `protocol ← engine ← store(interface) ← service ← 
 - `question(i)` has two sub-states derived from time: _get ready_ (`now < openAt`, question visible, options inert) and _open_ (`openAt ≤ now ≤ deadline + grace`).
 - `revealing(i)` exists because on Lambda, answers accepted just before close may still be in flight. The close handler waits a settle interval, then computes results ([ADR-0006](adr/0006-answers-aggregation-reveal.md)). If the handler dies mid-way, the next host command re-runs the reveal, which is deterministic.
 - Only host commands and the question timer change phase. Joins, answers, heartbeats and reconnects never write session state.
-- Timer expiry: on the VM the server schedules the close itself. On Lambda there is no process to hold a timer, so host clients send `host.close {reason:'timer'}` at the deadline. Late answers are rejected by server time regardless of when the close arrives, so a slow or absent host delays the reveal but cannot change scores.
+- Timer expiry: on the VM the server schedules the close itself. On Lambda there is no process to hold a timer, so host clients send `host.close {reason:'timer'}` at `deadline + grace`, and resend it until the question closes. The service holds a timer close that arrives earlier until `deadline + grace`, so no answer inside the grace window is lost. Late answers are rejected by server time regardless of when the close arrives, so a slow or absent host delays the reveal but cannot change scores.
 
 ## Key decisions (summaries; details in ADRs)
 

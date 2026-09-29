@@ -28,6 +28,7 @@ One on-demand table. Keys: `pk` (S), `sk` (S). TTL attribute: `expiresAt` (epoch
 | PIN claim               | `PIN#{pin}`                   | `PIN`                      |                                                                    | session expiry, released at end |
 | Player                  | `SESS#{sid}`                  | `PLAYER#{pid}`             |                                                                    | 30 d                            |
 | Nickname claim          | `SESS#{sid}`                  | `NICK#{nicknameKey}`       |                                                                    | 30 d                            |
+| Seat counter            | `SESS#{sid}`                  | `PCOUNT`                   | `seats`: players admitted, for the atomic player cap               | session expiry                  |
 | Connection (by id)      | `CONN#{connId}`               | `CONN`                     |                                                                    | 3 h                             |
 | Connection (by session) | `SESS#{sid}`                  | `CONN#{connId}`            |                                                                    | 3 h                             |
 | Response                | `RESP#{sid}#{qIndex}#{shard}` | `P#{pid}#{slot}`           | shard = FNV-1a(pid) mod 4                                          | 30 d                            |
@@ -39,15 +40,15 @@ GSI `gsi1` (`gsi1pk`, `gsi1sk`), projection ALL, sparse (only META items carry i
 
 ### Access patterns
 
-| Pattern           | Operation                                                                                                                                             |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Resolve PIN       | GetItem `PIN#{pin}`                                                                                                                                   |
-| Join              | TransactWriteItems: Put player + Put nickname claim, both `attribute_not_exists(pk)`                                                                  |
-| Count players     | Query `SESS#{sid}` begins_with `PLAYER#`, `Select: COUNT`                                                                                             |
-| Answer            | GetItem `CONN#…`; GetItem META (strongly consistent); PutItem response `attribute_not_exists(pk)` with `ReturnValuesOnConditionCheckFailure: ALL_OLD` |
-| Broadcast         | Query `SESS#{sid}` begins_with `CONN#`                                                                                                                |
-| Reveal            | 4 × Query `RESP#{sid}#{i}#{0..3}` (consistent) + Query players + GetItem SCORES, then Put RESULT + conditional Put SCORES + conditional Put META      |
-| Host session list | Query `gsi1` `HOST#{hostId}`, newest first                                                                                                            |
+| Pattern           | Operation                                                                                                                                                                                                             |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resolve PIN       | GetItem `PIN#{pin}`                                                                                                                                                                                                   |
+| Join              | UpdateItem `PCOUNT` `seats < maxPlayers` (take a seat), then TransactWriteItems: Put player + Put nickname claim, both `attribute_not_exists(pk)`; the seat is given back only when the insert provably wrote nothing |
+| Count players     | Query `SESS#{sid}` begins_with `PLAYER#`, `Select: COUNT`                                                                                                                                                             |
+| Answer            | GetItem `CONN#…`; GetItem META (strongly consistent); PutItem response `attribute_not_exists(pk)` with `ReturnValuesOnConditionCheckFailure: ALL_OLD`                                                                 |
+| Broadcast         | Query `SESS#{sid}` begins_with `CONN#`                                                                                                                                                                                |
+| Reveal            | 4 × Query `RESP#{sid}#{i}#{0..3}` (consistent) + Query players + GetItem SCORES, then Put RESULT + conditional Put SCORES + conditional Put META                                                                      |
+| Host session list | Query `gsi1` `HOST#{hostId}`, newest first                                                                                                                                                                            |
 
 ### Expiry
 
@@ -55,7 +56,11 @@ Every live-session item carries `expiresAt`. Both stores treat an item with `exp
 
 ## Consequences
 
-- Answers never touch META, SCORES or any shared counter; each lands on one of four partition keys per question. At 400 answers in 300 ms (≈ 1,300/s), each key sees ≈ 330 WCU/s.
+- Answers never touch META, SCORES or any shared counter (the one counter, `PCOUNT`, is on the join path only); each lands on one of four partition keys per question. At 400 answers in 300 ms (≈ 1,300/s), each key sees ≈ 330 WCU/s.
 - META is read strongly consistently on every answer: about 200 RCU/s during a 2 s burst, against 3,000 per partition.
 - Storage for one session is about 2 MB, which costs nothing within the 25 GB free storage.
 - The JSON shape of records is stored as native DynamoDB maps via `@aws-sdk/lib-dynamodb` (`removeUndefinedValues: true`).
+
+## Amendment (2026-09-29, final audit)
+
+The player cap was first checked with a count and then written, so concurrent joins could overfill a session and push host messages past API Gateway's 128 KB frame. Joins now take a seat on the per-session `PCOUNT` item with a conditional update before the insert transaction. The counter stays outside the transaction: inside it, every join of a session would cancel every other and be retried. A seat is given back when the insert is refused or provably not written. An invocation that dies between the two writes keeps its seat, which costs one place of that session's cap.
