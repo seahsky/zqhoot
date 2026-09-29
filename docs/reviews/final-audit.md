@@ -74,4 +74,5 @@ FA numbers are the order the workflow returned them in; the task specs quote eac
 ## Status
 
 - Fixed by the lead in `fd18c59`: FA-00/07, FA-01/12, FA-02, FA-13, FA-14, FA-15.
-- F1 and F2: see [docs/PLAN.md](../PLAN.md) for task status.
+- Fixed by [F1](../tasks/F1-realtime-audit-fixes.md) in `1d25268`: FA-03, FA-04, FA-05/08, FA-06, FA-09, FA-10, FA-11. Its reviewer raised one more case: a host who presses Next at "Time's up" could still cut the grace window. [F3](../tasks/F3-grace-followups.md) fixed that in `146ccd9`, and the ADRs were amended in `560e17a` and `aa09780`.
+- FA-16 to FA-22: [F2](../tasks/F2-web-audit-fixes.md).
