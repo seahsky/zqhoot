@@ -8,6 +8,7 @@ import type {
   HostHelloMsg,
   HostKickMsg,
   HostModerateMsg,
+  HostNextMsg,
   HostSnapshot,
   HostStatsMsg,
   JoinMsg,
@@ -321,7 +322,7 @@ export class GameService {
           await this.#out.error(connectionId, 'unauthorized', 'not a host connection', msg.type);
           return;
         }
-        await this.#hostCommand(connectionId, binding, msg);
+        await this.#hostCommand(connectionId, binding, msg, receivedAt);
         return;
       }
     }
@@ -331,6 +332,7 @@ export class GameService {
     connectionId: string,
     binding: ConnectionRecord,
     msg: HostCommandMsg,
+    receivedAt: number,
   ): Promise<void> {
     switch (msg.type) {
       case 'host.kick':
@@ -340,11 +342,10 @@ export class GameService {
       case 'host.stats':
         return this.#stats(connectionId, binding, msg);
       default:
-        // A timer close that comes early must not cut the answer grace short (ADR-0005).
+        // A close must not cut the answer grace short (ADR-0005).
         if (
-          msg.type === 'host.close' &&
-          msg.reason === 'timer' &&
-          !(await this.#awaitGraceEnd(binding.sessionId, msg))
+          (msg.type === 'host.close' || msg.type === 'host.next') &&
+          !(await this.#awaitGraceEnd(binding.sessionId, msg, receivedAt))
         ) {
           return;
         }
@@ -357,21 +358,46 @@ export class GameService {
   }
 
   /**
-   * Holds a `host.close {reason:'timer'}` back until `deadline + answerGraceMs`, the last instant
-   * an answer is accepted. Clients close at that time by their own clock, which can run a little
-   * fast, and an answer that arrives after the close commits is refused whatever its `receivedAt`.
-   * Returns false when the close was left to the scheduler and the caller has nothing to do.
+   * Holds a command that would close a timed question until `deadline + answerGraceMs`, the last
+   * instant an answer is accepted. An answer that reaches the server after the close commits is
+   * refused whatever its `receivedAt`, and the presenter offers Next from the deadline on, so a
+   * prompt host would refuse the answers still in flight. Held: a `timer` close that comes early
+   * (a client's clock can run fast), and any close, or a Next from the question, that arrives
+   * from the deadline on. Not held: a close that arrives before the deadline (ending a question
+   * early is the host's choice) and `all-answered` (nobody is left in flight). `receivedAt` says
+   * when the host acted, so a slow invocation cannot turn an early close into a held one.
+   *
+   * Returns false when the command was left to the scheduler and the caller has nothing to do:
+   * the scheduler's close follows within `answerGraceMs` and reaches the host as the reveal, so a
+   * held Next needs no second press and draws no error.
    */
-  async #awaitGraceEnd(sessionId: string, msg: HostCloseMsg): Promise<boolean> {
+  async #awaitGraceEnd(
+    sessionId: string,
+    msg: HostCloseMsg | HostNextMsg,
+    receivedAt: number,
+  ): Promise<boolean> {
+    let questionIndex: number;
+    let timer = false;
+    if (msg.type === 'host.close') {
+      if (msg.reason === 'all-answered') return true;
+      questionIndex = msg.questionIndex;
+      timer = msg.reason === 'timer';
+    } else if (msg.from.phase === 'question') {
+      questionIndex = msg.from.questionIndex;
+    } else {
+      return true;
+    }
+
     const meta = await this.#store.getSession(sessionId);
     if (
       meta === null ||
       meta.phase !== 'question' ||
-      meta.questionIndex !== msg.questionIndex ||
+      meta.questionIndex !== questionIndex ||
       meta.deadline === null
     ) {
       return true;
     }
+    if (!timer && receivedAt < meta.deadline) return true;
     const grace = this.#cfg.engine.answerGraceMs;
     const wait = meta.deadline + grace - this.#clock.now();
     if (wait <= 0) return true;

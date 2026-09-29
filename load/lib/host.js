@@ -1,3 +1,4 @@
+import { everyoneAnswered, timerCloseDelayMs } from './close.js';
 import { cfg } from './config.js';
 import { hostTransition, joinPhase, recordError } from './metrics.js';
 import {
@@ -19,7 +20,8 @@ export function runHost(data) {
 /**
  * The presenter's control screen, driven the way the web app drives it: `host.next` to open a
  * question, `host.stats` once a second while it is open, `host.close` when everyone has answered
- * or the deadline passes, then `host.next` through reveal and leaderboard. Every command carries
+ * or the answer grace after the deadline is over, then `host.next` through reveal and leaderboard.
+ * Every command carries
  * the `from` the host last saw, so sending one twice is a no-op on the server.
  */
 class Host {
@@ -302,7 +304,7 @@ class Host {
     const deadline = this.question === null ? null : this.question.deadline;
     if (deadline !== null) {
       // The host's own clock, moved onto the server's timeline by the offset rule.
-      this.closeTimer = this.after(deadline + this.clock.get() - Date.now(), () =>
+      this.closeTimer = this.after(timerCloseDelayMs(deadline, this.clock.get(), Date.now()), () =>
         this.close('timer'),
       );
     }
@@ -317,8 +319,7 @@ class Host {
 
   onStats(message) {
     if (this.phase !== 'question' || message.questionIndex !== this.questionIndex) return;
-    const { answered, totalPlayers } = message.stats;
-    if (totalPlayers > 0 && answered >= totalPlayers) this.close('all-answered');
+    if (everyoneAnswered(message.stats)) this.close('all-answered');
   }
 
   close(reason) {

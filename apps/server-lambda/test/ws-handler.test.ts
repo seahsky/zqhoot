@@ -324,11 +324,43 @@ describe('the host timer close (ADR-0005)', () => {
     expect(h.transport.last(h.cid(player), 'reveal').you.answered).toBe(false);
   });
 
-  it('does not wait for a manual close', async () => {
+  it('does not wait for a manual close before the deadline', async () => {
     const game = await openFirstQuestion(['manual']);
-    h.clock.set(game.deadline + 50);
+    h.clock.set(game.deadline - 1000);
     const before = h.sleeps.length;
     await h.send(game.host, { type: 'host.close', questionIndex: 0, reason: 'manual' });
+    // Only the reveal settle.
     expect(h.sleeps.slice(before)).toEqual([1000]);
+    expect(await h.store.getSession(game.sessionId)).toMatchObject({
+      phase: 'reveal',
+      closedAt: game.deadline - 1000,
+    });
   });
+
+  it.each([
+    ['a manual close', { type: 'host.close', questionIndex: 0, reason: 'manual' }],
+    [
+      'a Next from the question',
+      { type: 'host.next', from: { phase: 'question', questionIndex: 0 } },
+    ],
+  ] as const)(
+    'waits out the answer grace for %s that arrives after the deadline',
+    async (_name, command) => {
+      const game = await openFirstQuestion(['pressed']);
+      const [player] = game.players as [string];
+      h.clock.set(game.deadline + 50);
+      const before = h.sleeps.length;
+
+      await h.send(game.host, command);
+
+      // 700 ms until deadline + grace, then the reveal settle.
+      expect(h.sleeps.slice(before)).toEqual([TIMING.answerGraceMs - 50, 1000]);
+      expect(await h.store.getSession(game.sessionId)).toMatchObject({
+        phase: 'reveal',
+        closedAt: game.deadline + TIMING.answerGraceMs,
+      });
+      expect(h.transport.to(h.cid(game.host)).filter((m) => m.type === 'error')).toEqual([]);
+      expect(h.transport.last(h.cid(player), 'reveal')).toMatchObject({ index: 0 });
+    },
+  );
 });

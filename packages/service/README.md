@@ -102,8 +102,9 @@ Node-only global. `test/boundary.test.ts` enforces this.
   for a question that is no longer open does nothing. `cancel(sessionId)` drops the pending timers
   of a session. After a restart, restore timers from the persisted `deadline` of sessions in phase
   `question`. On Lambda there is no scheduler and the host client sends `host.close {reason:'timer'}`
-  at `deadline + answerGraceMs`. A timer close that arrives earlier is held back to that instant
-  (see `host.close` below), so it never cuts the answer grace short.
+  at `deadline + answerGraceMs`. A timer close that arrives earlier, and a manual close or a
+  `host.next` from the question that arrives after the deadline, are held back to that instant
+  (see `host.close` below), so none of them cuts the answer grace short.
 - **HTTP**: mount the Hono app (`app.fetch`, or `hono/aws-lambda`'s `handle`). Provide `clientIp`
   (API Gateway `requestContext.http.sourceIp`, or the first `X-Forwarded-For` hop only behind a proxy
   you trust). Do not buffer request bodies for `PUT /api/media/*`: the app counts bytes while
@@ -167,19 +168,22 @@ Nothing else is read or written: never META, never a counter, and hosts are not 
 
 ### `host.close` / `host.next` / timer -> reveal
 
-0. `host.close {reason:'timer'}` only: `getSession`. While the question is open and timed and
-   `now < deadline + answerGraceMs`, the close is not applied yet. With a scheduler (the VM) the
-   frame is dropped, because the scheduler closes at exactly that instant. Without one (Lambda) the
+0. `host.close` (any reason but `all-answered`) and `host.next` whose `from` is the question:
+   `getSession`. While the question is open and timed and `now < deadline + answerGraceMs`, the
+   command may be held: it is not applied yet. Held are a `timer` close whatever its time, and a
+   `manual` close or a `host.next` from the question that the host sent at or after the deadline
+   (the frame's `receivedAt`, not the time the invocation runs, so a slow start cannot turn an
+   early press into a held one). With a scheduler (the VM) the frame is dropped, because the
+   scheduler closes at exactly that instant, at most `answerGraceMs` later: the host sees the
+   reveal from that close, needs no second press and gets no error. Without one (Lambda) the
    invocation waits the remainder with the `Sleep` port, at most `answerGraceMs`, and carries on.
-   `manual` and `all-answered` closes, and timer closes for a question that is not open, skip this.
-   Clients close at that instant by their own clock, and an answer that reaches the server after
-   the close commits is refused as `too-late` whatever its `receivedAt`. Only the timer close is
-   held: a `manual` close (or `host.next` from a question) that arrives in
-   `(deadline, deadline + answerGraceMs]` closes at once, and an answer still in flight inside
-   that window is refused. A host who presses "End question" when the presenter shows "Time's up"
-   at the bare deadline therefore cuts off the grace. This follows the rule that manual closes stay
-   immediate; holding them too, or disabling the control until `deadline + answerGraceMs`, is an
-   open question for the lead.
+   Not held: a `manual` close or a `host.next` from the question that arrives before the deadline
+   (ending a question early is the host's choice), an `all-answered` close (nobody is left in
+   flight), anything for an untimed question or a question that is not open, and a `host.next`
+   from any other phase. The reason: an answer that reaches the server after the close commits is
+   refused as `too-late` whatever its `receivedAt`, and the presenter shows "Time's up" and
+   offers Next from the deadline on, so a host who pressed End question, Next, Space or a clicker
+   at once would refuse the answers still in flight inside `(deadline, deadline + answerGraceMs]`.
 1. `getConnection` (host binding) -> `getSession` + `getSnapshot` -> engine `applyHostCommand` (or
    `timerClose`). Not ok: the error goes to the requester. Effect `none`: `host.state` to the
    requester only.
@@ -295,7 +299,7 @@ IPs, and a fake clock in the year 2100 (so DynamoDB Local's TTL sweeper never to
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `scenario.test.ts`                                       | A full game with every question type, 12 players, reconnects, a kick, moderation, hand-computed scores, the CSV and answer secrecy |
 | `errors.test.ts`                                         | Every `ErrorCode`, oversize and bad frames, protocol version, bindings and roles                                                   |
-| `timing.test.ts`                                         | The answer window, a timer close inside the grace, `revealSettleMs`, a reveal retried in the settle, timers and the scheduler      |
+| `timing.test.ts`                                         | The answer window, closes and Next inside the grace, `revealSettleMs`, a reveal retried in the settle, timers and the scheduler    |
 | `admission.test.ts`                                      | The failed-PIN budget over the WebSocket (shared with HTTP) and the player cap under a burst of joins                              |
 | `races.test.ts`                                          | Double `host.next`, double close, timer vs manual close, a crash between reveal writes, concurrent answers                         |
 | `players.test.ts`, `hosts.test.ts`, `edge-cases.test.ts` | join/resume/leave, host commands, kick, moderation, stats, gone connections, defensive paths                                       |

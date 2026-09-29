@@ -159,8 +159,9 @@ describeWithStores('full game scenario', (make) => {
       { playerId: playerId.Kai, nickname: 'Kai', connected: true },
     ]);
 
-    // Close and reveal (the VM settles for 0 ms).
-    h.clock.set(deadline0 + 200);
+    // Close and reveal (the VM settles for 0 ms). A close before the deadline is the host's
+    // choice and applies at once; one after it would wait for the scheduler's own close.
+    h.clock.set(deadline0 - 200);
     await h.send(control, { type: 'host.close', questionIndex: 0, reason: 'manual' });
     expect(h.scheduler.cancelled).toContain(sessionId);
     const reveal0 = (nick: string) => h.transport.last(conn[nick]!, 'reveal');

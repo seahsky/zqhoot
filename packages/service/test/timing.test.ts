@@ -3,6 +3,7 @@ import type { SessionMeta } from '@zqhoot/engine';
 import { describeWithStores } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { choice, startGame, text } from './game.ts';
+import type { Game } from './game.ts';
 import { miniQuiz } from './fixtures.ts';
 
 describeWithStores('answer timing and reveal settling', (make) => {
@@ -267,15 +268,16 @@ describeWithStores('answer timing and reveal settling', (make) => {
       expect(h.sleeps).toEqual([750]);
     });
 
-    it('does not wait for a manual close, an all-answered close, or a close that is already moot', async () => {
+    it('does not wait for an early manual close, an all-answered close, or a close that is already moot', async () => {
       const h = await make();
       const g = await startGame(h, { players: ['Ann'] });
       const { openAt, deadline } = await g.open({ phase: 'lobby', questionIndex: -1 });
       await g.answer('Ann', 0, choice('opt-paris'), openAt + 100);
-      h.clock.set(deadline! + 50);
+      h.clock.set(deadline! - 1000);
       await g.close(0, 'manual');
       expect(await h.store.getSession(g.sessionId)).toMatchObject({ phase: 'reveal' });
       // Repeats and stale indexes find nothing open and pass straight through.
+      h.clock.set(deadline! + 50);
       await g.close(0, 'timer');
       await g.close(7, 'timer');
       expect(h.sleeps).toEqual([]);
@@ -309,6 +311,213 @@ describeWithStores('answer timing and reveal settling', (make) => {
         status: 'rejected',
         reason: 'too-late',
       });
+    });
+  });
+
+  describe('a manual close or a Next that arrives after the deadline (ADR-0005)', () => {
+    // The presenter shows "Time's up" at the deadline and offers Next, so a host can press End
+    // question, Next, Space or a clicker while answers are still in flight.
+    const presses: Array<[string, (g: Game, receivedAt?: number) => Promise<void>]> = [
+      [
+        'a manual close',
+        (g, at) =>
+          g.h.send(g.control, { type: 'host.close', questionIndex: 0, reason: 'manual' }, at),
+      ],
+      [
+        'a host.next from the question',
+        (g, at) =>
+          g.h.send(
+            g.control,
+            { type: 'host.next', from: { phase: 'question', questionIndex: 0 } },
+            at,
+          ),
+      ],
+    ];
+
+    for (const [name, press] of presses) {
+      describe(name, () => {
+        it('waits on Lambda, and an answer received at deadline + 300 ms is accepted and scored', async () => {
+          let during: (() => Promise<void>) | undefined;
+          const h = await make({
+            onSleep: async () => {
+              const run = during;
+              during = undefined;
+              await run?.();
+            },
+          });
+          const g = await startGame(h, { players: ['Ann', 'Bob'] });
+          const { openAt, deadline } = await g.open({ phase: 'lobby', questionIndex: -1 });
+          await g.answer('Ann', 0, choice('opt-paris'), openAt + 100);
+
+          // The press reaches the server 50 ms after the deadline; Bob's answer, sent before the
+          // deadline over a slow link, reaches it at deadline + 300 ms.
+          h.clock.set(deadline! + 50);
+          during = () => g.answer('Bob', 0, choice('opt-paris'), deadline! + 300);
+          await press(g);
+
+          expect(h.sleeps).toEqual([700]);
+          expect(h.transport.last(g.players.Bob!.connectionId, 'answer.ack')).toMatchObject({
+            status: 'accepted',
+          });
+          expect(h.transport.last(g.players.Bob!.connectionId, 'reveal').you).toMatchObject({
+            answered: true,
+            correct: true,
+            points: 400,
+          });
+          expect(await h.store.getSession(g.sessionId)).toMatchObject({
+            phase: 'reveal',
+            closedAt: deadline! + 750,
+          });
+          const board = (await h.store.getScoreboard(g.sessionId))!;
+          expect(board.players[g.players.Bob!.playerId]).toMatchObject({ score: 400 });
+          expect(h.transport.ofType(g.control, 'error')).toEqual([]);
+        });
+
+        it('is left to the scheduler on the VM: no error, and the reveal follows without a second press', async () => {
+          const h = await make({ scheduler: true });
+          const g = await startGame(h, { players: ['Ann'] });
+          const { deadline } = await g.open({ phase: 'lobby', questionIndex: -1 });
+          h.clock.set(deadline! + 50);
+          await press(g);
+
+          expect(h.sleeps).toEqual([]);
+          expect(await h.store.getSession(g.sessionId)).toMatchObject({ phase: 'question' });
+          expect(h.transport.ofType(g.control, 'error')).toEqual([]);
+          expect(h.scheduler.cancelled).toEqual([]);
+
+          await g.answer('Ann', 0, choice('opt-paris'), deadline! + 300);
+          expect(h.transport.last(g.players.Ann!.connectionId, 'answer.ack')).toMatchObject({
+            status: 'accepted',
+          });
+          h.clock.set(deadline! + 750);
+          await h.service.onTimer(g.sessionId, 0);
+          expect(h.transport.last(g.players.Ann!.connectionId, 'reveal').you).toMatchObject({
+            points: 400,
+          });
+          expect(h.transport.last(g.control, 'host.state').snapshot).toMatchObject({
+            phase: 'reveal',
+          });
+          expect(h.transport.ofType(g.control, 'error')).toEqual([]);
+        });
+
+        it('holds from the deadline itself, when the presenter shows "Time\'s up"', async () => {
+          const h = await make();
+          const g = await startGame(h, { players: ['Ann'] });
+          const { deadline } = await g.open({ phase: 'lobby', questionIndex: -1 });
+          h.clock.set(deadline!);
+          await press(g);
+          expect(h.sleeps).toEqual([750]);
+          expect(await h.store.getSession(g.sessionId)).toMatchObject({
+            phase: 'reveal',
+            closedAt: deadline! + 750,
+          });
+        });
+
+        it('is still immediate 1,000 ms before the deadline', async () => {
+          const h = await make();
+          const g = await startGame(h, { players: ['Ann'] });
+          const { deadline } = await g.open({ phase: 'lobby', questionIndex: -1 });
+          h.clock.set(deadline! - 1000);
+          await press(g);
+          expect(h.sleeps).toEqual([]);
+          expect(await h.store.getSession(g.sessionId)).toMatchObject({
+            phase: 'reveal',
+            closedAt: deadline! - 1000,
+          });
+          await g.answer('Ann', 0, choice('opt-paris'), deadline! - 500);
+          expect(h.transport.last(g.players.Ann!.connectionId, 'answer.ack')).toMatchObject({
+            status: 'rejected',
+            reason: 'too-late',
+          });
+        });
+
+        it('is judged by when the host acted: a slow invocation does not hold an early press', async () => {
+          const h = await make();
+          const g = await startGame(h, { players: ['Ann'] });
+          const { deadline } = await g.open({ phase: 'lobby', questionIndex: -1 });
+          // A cold start: the frame was stamped 100 ms before the deadline, the invocation runs later.
+          h.clock.set(deadline! + 200);
+          await press(g, deadline! - 100);
+          expect(h.sleeps).toEqual([]);
+          expect(await h.store.getSession(g.sessionId)).toMatchObject({ phase: 'reveal' });
+        });
+
+        it('waits no longer than what is left of the grace on Lambda', async () => {
+          const h = await make();
+          const late = await startGame(h, { label: 'late-' });
+          const opened = await late.open({ phase: 'lobby', questionIndex: -1 });
+          h.clock.set(opened.deadline! + 500);
+          await press(late);
+          expect(h.sleeps).toEqual([250]);
+
+          h.sleeps.length = 0;
+          const last = await startGame(h, { label: 'last-' });
+          const lastOpened = await last.open({ phase: 'lobby', questionIndex: -1 });
+          h.clock.set(lastOpened.deadline! + 749);
+          await press(last);
+          expect(h.sleeps).toEqual([1]);
+
+          // Nothing left to wait for once the grace is over.
+          h.sleeps.length = 0;
+          const over = await startGame(h, { label: 'over-' });
+          const overOpened = await over.open({ phase: 'lobby', questionIndex: -1 });
+          h.clock.set(overOpened.deadline! + 750);
+          await press(over);
+          expect(h.sleeps).toEqual([]);
+          expect(await h.store.getSession(over.sessionId)).toMatchObject({ phase: 'reveal' });
+
+          // A frame stamped after the deadline by a clock that runs ahead of this invocation's
+          // still holds the invocation for at most the grace.
+          h.sleeps.length = 0;
+          const skewed = await startGame(h, { label: 'skewed-' });
+          const skewedOpened = await skewed.open({ phase: 'lobby', questionIndex: -1 });
+          h.clock.set(skewedOpened.deadline! - 5000);
+          await press(skewed, skewedOpened.deadline! + 10);
+          expect(h.sleeps).toEqual([750]);
+        });
+
+        it('does not wait for an untimed question', async () => {
+          const h = await make();
+          const quiz = miniQuiz();
+          const g = await startGame(h, { quiz: { ...quiz, questions: [quiz.questions[1]!] } });
+          await g.open({ phase: 'lobby', questionIndex: -1 });
+          h.clock.advance(3_600_000);
+          await press(g);
+          expect(h.sleeps).toEqual([]);
+          expect(await h.store.getSession(g.sessionId)).toMatchObject({ phase: 'reveal' });
+        });
+      });
+    }
+
+    it('does not hold an all-answered close, however late it comes', async () => {
+      const h = await make();
+      const g = await startGame(h, { players: ['Ann'] });
+      const { openAt, deadline } = await g.open({ phase: 'lobby', questionIndex: -1 });
+      await g.answer('Ann', 0, choice('opt-paris'), openAt + 100);
+      h.clock.set(deadline! + 50);
+      await g.close(0, 'all-answered');
+      expect(h.sleeps).toEqual([]);
+      expect(await h.store.getSession(g.sessionId)).toMatchObject({ phase: 'reveal' });
+    });
+
+    it('does not hold a Next that is stale, or one from a phase after the question', async () => {
+      const h = await make();
+      const g = await startGame(h, { players: ['Ann'] });
+      const { deadline } = await g.open({ phase: 'lobby', questionIndex: -1 });
+      h.clock.set(deadline! + 50);
+      await g.next('reveal', 0);
+      await g.next('question', 5);
+      expect(h.sleeps).toEqual([]);
+      expect(await h.store.getSession(g.sessionId)).toMatchObject({ phase: 'question' });
+
+      await g.close(0, 'manual');
+      expect(h.sleeps).toEqual([700]);
+      h.sleeps.length = 0;
+      // Once closed, a repeated Next from the question or a Next from the reveal is not a wait.
+      await g.next('question', 0);
+      await g.next('reveal', 0);
+      expect(h.sleeps).toEqual([]);
+      expect(await h.store.getSession(g.sessionId)).toMatchObject({ phase: 'leaderboard' });
     });
   });
 
