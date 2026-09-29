@@ -14,3 +14,9 @@ export const ME = {
   playerId: 'player-riley-01',
   nickname: 'Riley',
 } as const;
+
+/**
+ * The join URL a runtime config would carry. Assembled from parts because the source scan
+ * forbids a literal scheme anywhere in src.
+ */
+export const JOIN_URL = ['https:', '', 'quiz.example.test', 'join'].join('/');

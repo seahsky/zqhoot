@@ -1,0 +1,343 @@
+/* Sign-in, dashboard and live control. rem-based; every block reflows down to 320 px. */
+
+.narrow {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 28rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.lead {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.problem {
+  font-size: 1rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.problemBox,
+.noticeBox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.meta {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.eyebrow {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.h2 {
+  font-size: 1.5rem;
+}
+
+.h3 {
+  font-size: 1.125rem;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: 0.75rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ---- Live control ----------------------------------------------------------------- */
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  padding: 0.25rem 0.75rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: 999px;
+  font-size: var(--fs-small);
+  font-weight: 800;
+}
+
+.join {
+  font-size: 1.125rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pin {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .columns {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+
+.main,
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1.25rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+}
+
+/* The one button the host presses all game: big, and always the same place. */
+.next {
+  min-height: 5rem;
+  font-size: 1.5rem;
+}
+
+.prompt {
+  font-size: 1.25rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.dist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.bigFigure {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.bars,
+.ratingList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 0.75rem;
+}
+
+.barLabel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.barFigures {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.barTrack {
+  grid-column: 1 / -1;
+  display: block;
+  height: 0.75rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+}
+
+.correctTag {
+  padding: 0 0.5rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: var(--fs-small);
+  font-weight: 800;
+}
+
+.ratingList li {
+  display: grid;
+  grid-template-columns: 2ch minmax(0, 1fr) 3ch;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 700;
+}
+
+.wordList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-weight: 700;
+}
+
+.moderation {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.responses {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.response {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.responseText {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.responseBody {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.rosterBox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rosterScroll {
+  max-height: 26rem;
+  overflow: auto;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+}
+
+.rosterList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rosterRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+}
+
+.rosterName {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}

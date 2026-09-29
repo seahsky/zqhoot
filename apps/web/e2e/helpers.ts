@@ -12,9 +12,16 @@ export const DISABLED_RULES: Array<{ id: string; reason: string }> = [];
 
 export async function openScreen(page: Page, id: string) {
   await page.goto(`/dev/gallery?screen=${id}`);
-  await page.locator(`[data-gallery-screen="${id}"]`).waitFor();
+  // `attached`, not visible: the presenter stage is `position: fixed`, so its wrapper has no box.
+  await page.locator(`[data-gallery-screen="${id}"]`).waitFor({ state: 'attached' });
   // The system font stack needs no download, but layout must be settled before measuring.
   await page.evaluate(() => document.fonts.ready);
+  // Fades and slides are finite; measure and photograph the state they end in. Images (the
+  // QR code, a question picture) are data URLs, so decoding them is quick but not instant.
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined)));
+    await Promise.all([...document.images].map((img) => img.decode().catch(() => undefined)));
+  });
 }
 
 /** axe, horizontal scroll, and a full-page screenshot under `e2e/screenshots/{shotDir}/`. */

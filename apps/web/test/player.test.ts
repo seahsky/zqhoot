@@ -725,6 +725,88 @@ describe('a refused text entry is handed back', () => {
   });
 });
 
+describe('a text entry lost with the socket is handed back after the resume', () => {
+  const text = (t: string): AnswerPayload => ({ kind: 'text', text: t });
+  const resume = (s: PlayerState, responses: AnswerPayload[] = [], ts = T0 + 5_000) =>
+    playerReducer(s, {
+      type: 'message',
+      msg: welcome(questionSnap(cloud, -1_000, { responses }), ts),
+    });
+
+  it('offers back an entry that was sent but never acknowledged', () => {
+    let s = run(welcome(questionSnap(cloud, -1_000)), sent(text('sunny')));
+    expect(s.view).toMatchObject({ screen: 'submitted', sending: true });
+    s = resume(s);
+    expect(s.view).toMatchObject({
+      screen: 'answering',
+      restore: { text: 'sunny', seq: 1 },
+    });
+  });
+
+  it('offers the oldest lost entry first and keeps the ones the server holds', () => {
+    let s = run(
+      welcome(questionSnap(cloud, -1_000)),
+      sent(text('first')),
+      ack('accepted', 1),
+      sent(text('second')),
+      sent(text('third')),
+    );
+    s = resume(s, [text('first'), text('third')]);
+    expect(s.view).toMatchObject({
+      screen: 'submitted',
+      responses: [text('first'), text('third')],
+      restore: { text: 'second', seq: 1 },
+    });
+  });
+
+  it('does nothing when the server did receive it', () => {
+    let s = run(welcome(questionSnap(cloud, -1_000)), sent(text('sunny')));
+    s = resume(s, [text('sunny')]);
+    expect(s.view).toMatchObject({ screen: 'submitted', responses: [text('sunny')] });
+    expect((s.view as { restore?: unknown }).restore).toBeUndefined();
+  });
+
+  it('counts a repeated word once per copy the server holds', () => {
+    let s = run(
+      welcome(questionSnap(cloud, -1_000)),
+      sent(text('sunny')),
+      ack('accepted', 1),
+      sent(text('sunny')),
+    );
+    s = resume(s, [text('sunny')]);
+    expect(s.view).toMatchObject({ restore: { text: 'sunny', seq: 1 } });
+  });
+
+  it('keeps counting from the refusals before the resume, so the field refills again', () => {
+    let s = run(
+      welcome(questionSnap(cloud, -1_000)),
+      sent(text('one')),
+      ack('rejected', 0, 'invalid'),
+    );
+    expect(s.view).toMatchObject({ restore: { seq: 1 } });
+    s = playerReducer(s, sent(text('two')));
+    s = resume(s);
+    expect(s.view).toMatchObject({ restore: { text: 'two', seq: 2 } });
+  });
+
+  it('a different question, or an answer that is not text, restores nothing', () => {
+    let s = run(welcome(questionSnap(cloud, -1_000)), sent(text('sunny')));
+    s = playerReducer(s, {
+      type: 'message',
+      msg: welcome(questionSnap({ ...cloud, id: 'question-other' }, -1_000), T0 + 5_000),
+    });
+    expect((s.view as { restore?: unknown }).restore).toBeUndefined();
+
+    s = run(welcome(questionSnap(single, -1_000)), sent(choice('option-venus')));
+    s = playerReducer(s, {
+      type: 'message',
+      msg: welcome(questionSnap(single, -1_000), T0 + 5_000),
+    });
+    expect(s.view).toMatchObject({ screen: 'answering' });
+    expect((s.view as { restore?: unknown }).restore).toBeUndefined();
+  });
+});
+
 describe('a question message', () => {
   it('replaces the screen and resets answers for a new question', () => {
     const s = run(

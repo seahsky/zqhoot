@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import type { Page, WebSocketRoute } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { ScriptedServer } from './scripted.ts';
 
 /**
  * The join and play containers against a scripted server, in a real browser: real
@@ -21,53 +22,6 @@ const PLANET = {
     { id: 'option-venus', text: 'Venus' },
   ],
 } as const;
-
-type Msg = Record<string, unknown> & { type: string };
-
-class ScriptedServer {
-  readonly sockets: WebSocketRoute[] = [];
-  readonly received: Msg[] = [];
-  /** Called for every client message; reply with `send`. */
-  onClient: (msg: Msg, ws: WebSocketRoute) => void = () => undefined;
-
-  async attach(page: Page) {
-    await page.route('**/config.json', (route) =>
-      route.fulfill({
-        json: {
-          target: 'vm',
-          apiBaseUrl: '',
-          wsUrl: 'ws://localhost:4173/ws',
-          mediaBaseUrl: '/',
-          joinUrl: 'http://localhost:4173/join',
-          auth: { mode: 'local' },
-        },
-      }),
-    );
-    await page.routeWebSocket('ws://localhost:4173/ws', (ws) => {
-      this.sockets.push(ws);
-      ws.onMessage((raw) => {
-        const msg = JSON.parse(String(raw)) as Msg;
-        this.received.push(msg);
-        this.onClient(msg, ws);
-      });
-    });
-  }
-
-  /** Every server message carries the server's clock, stamped as it is sent. */
-  send(ws: WebSocketRoute, msg: Record<string, unknown>) {
-    ws.send(JSON.stringify({ ts: Date.now(), ...msg }));
-  }
-
-  get last(): WebSocketRoute {
-    const ws = this.sockets.at(-1);
-    if (!ws) throw new Error('no socket yet');
-    return ws;
-  }
-
-  clientMessages(type: string) {
-    return this.received.filter((m) => m.type === type);
-  }
-}
 
 function snapshot(over: Record<string, unknown> = {}) {
   return {
@@ -286,17 +240,7 @@ test.describe('join and play against a scripted server', () => {
         responses: [{ kind: 'choice', optionId: 'option-mercury' }],
       }),
     );
-    await page.addInitScript(
-      ([session, player, token]) => {
-        if (!sessionStorage.getItem('zqhoot:session')) {
-          sessionStorage.setItem(
-            'zqhoot:session',
-            JSON.stringify({ sessionId: session, playerId: player, token, savedAt: Date.now() }),
-          );
-        }
-      },
-      [SESSION, PLAYER, TOKEN],
-    );
+    await withCredentials(page);
 
     await page.goto('/play?s=session-demo-01');
     await expect(page.getByRole('heading', { name: 'Answer locked in' })).toBeVisible();
@@ -320,14 +264,7 @@ test.describe('join and play against a scripted server', () => {
         question: { question: PLANET, openAt: now - 1_000, deadline: now + 60_000 },
       }),
     );
-    await page.addInitScript(
-      ([session, player, token]) =>
-        sessionStorage.setItem(
-          'zqhoot:session',
-          JSON.stringify({ sessionId: session, playerId: player, token, savedAt: Date.now() }),
-        ),
-      [SESSION, PLAYER, TOKEN],
-    );
+    await withCredentials(page);
     await page.goto('/play?s=session-demo-01');
     await expect(page.getByRole('button', { name: /Mercury/ })).toBeEnabled();
 
@@ -366,14 +303,7 @@ test.describe('join and play against a scripted server', () => {
         server.send(ws, { type: 'answer.ack', index: 0, status: 'accepted', entries: confirmed });
       }
     };
-    await page.addInitScript(
-      ([session, player, token]) =>
-        sessionStorage.setItem(
-          'zqhoot:session',
-          JSON.stringify({ sessionId: session, playerId: player, token, savedAt: Date.now() }),
-        ),
-      [SESSION, PLAYER, TOKEN],
-    );
+    await withCredentials(page);
     await page.goto('/play?s=session-demo-01');
 
     const field = page.getByLabel('Your word or short phrase');
@@ -405,14 +335,7 @@ test.describe('join and play against a scripted server', () => {
         question: { question: PLANET, openAt: now - 1_000, deadline: now + 60_000 },
       }),
     );
-    await page.addInitScript(
-      ([session, player, token]) =>
-        sessionStorage.setItem(
-          'zqhoot:session',
-          JSON.stringify({ sessionId: session, playerId: player, token, savedAt: Date.now() }),
-        ),
-      [SESSION, PLAYER, TOKEN],
-    );
+    await withCredentials(page);
     await page.goto('/play?s=session-demo-01');
     await expect(page.getByRole('button', { name: /Venus/ })).toBeEnabled();
 
@@ -540,14 +463,7 @@ test.describe('join and play against a scripted server', () => {
     const server = new ScriptedServer();
     await server.attach(page);
     playerServer(server, () => snapshot());
-    await page.addInitScript(
-      ([session, player, token]) =>
-        sessionStorage.setItem(
-          'zqhoot:session',
-          JSON.stringify({ sessionId: session, playerId: player, token, savedAt: Date.now() }),
-        ),
-      [SESSION, PLAYER, TOKEN],
-    );
+    await withCredentials(page);
     await page.goto('/play?s=session-demo-01');
     await expect(page.getByRole('heading', { name: /You're in/ })).toBeVisible();
     server.send(server.last, { type: 'kicked' });

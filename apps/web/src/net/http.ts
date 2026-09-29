@@ -29,6 +29,8 @@ export interface RequestOptions<T> {
   schema?: Parser<T>;
   /** How to read a 2xx body. Defaults to JSON; 204 always yields `undefined`. */
   responseType?: 'json' | 'text';
+  /** `Accept` header; JSON by default. */
+  accept?: string;
   signal?: AbortSignal;
   /** Overrides the client's token for this call; null sends no Authorization header. */
   token?: string | null;
@@ -79,7 +81,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
   const doFetch = options.fetchImpl ?? ((input, init) => fetch(input, init));
 
   async function request<T>(method: string, path: string, opts: RequestOptions<T> = {}) {
-    const headers: Record<string, string> = { Accept: 'application/json' };
+    const headers: Record<string, string> = { Accept: opts.accept ?? 'application/json' };
     const token = opts.token === undefined ? (options.getToken?.() ?? null) : opts.token;
     if (token) headers.Authorization = `Bearer ${token}`;
     const init: RequestInit = { method, headers };

@@ -502,10 +502,18 @@ function applySnapshot(state: PlayerState, snap: PlayerSnapshot): PlayerState {
       openAt: snap.question.openAt,
       deadline: snap.question.deadline,
     };
-    stage = {
-      kind: 'question',
-      run: newRun(info, snap.phase === 'revealing', snap.responses ?? []),
-    };
+    const run = newRun(info, snap.phase === 'revealing', snap.responses ?? []);
+    const held = currentRun(state);
+    if (held && held.info.index === info.index && held.info.question.id === info.question.id) {
+      // `seq` must keep counting: a mounted entry field compares it with the one it last saw.
+      run.restoreSeq = held.restoreSeq;
+      const lost = firstLostText(held, run.responses);
+      if (lost !== null) {
+        run.restoreText = lost;
+        run.restoreSeq += 1;
+      }
+    }
+    stage = { kind: 'question', run };
   } else if (snap.phase === 'reveal' && snap.reveal) {
     stage = {
       kind: 'reveal',
@@ -533,6 +541,38 @@ function applySnapshot(state: PlayerState, snap: PlayerSnapshot): PlayerState {
     me,
     stage,
   });
+}
+
+/**
+ * A text entry that `Connection.send()` accepted but the server never acknowledged dies with
+ * the socket. When the resume snapshot does not hold it either, the oldest such entry is
+ * handed back to the field, because the player cleared it when they pressed Send.
+ */
+function firstLostText(
+  held: QuestionRun,
+  serverResponses: readonly AnswerPayload[],
+): string | null {
+  const unacked = held.responses.slice(held.responses.length - held.pending);
+  if (!unacked.some((r) => r.kind === 'text')) return null;
+  const onServer = new Map<string, number>();
+  for (const r of serverResponses) {
+    if (r.kind === 'text') onServer.set(r.text, (onServer.get(r.text) ?? 0) + 1);
+  }
+  const take = (text: string): boolean => {
+    const n = onServer.get(text) ?? 0;
+    if (n === 0) return false;
+    onServer.set(text, n - 1);
+    return true;
+  };
+  // Entries the server had already confirmed use up their copies first, so a repeated
+  // word does not make a lost duplicate look delivered.
+  for (const r of held.responses.slice(0, held.responses.length - held.pending)) {
+    if (r.kind === 'text') take(r.text);
+  }
+  for (const r of unacked) {
+    if (r.kind === 'text' && !take(r.text)) return r.text;
+  }
+  return null;
 }
 
 function reduceAck(state: PlayerState, msg: AnswerAckMsg): PlayerState {

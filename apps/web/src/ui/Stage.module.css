@@ -1,0 +1,45 @@
+/* The letterbox: the stage's own background is --bg, the bars around it are a shade off. */
+.frame {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.stage {
+  container-type: size;
+  aspect-ratio: 16 / 9;
+  width: min(100vw, calc(100vh * 16 / 9));
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/*
+ * `--u` is declared on a child because a container's own container-query units resolve
+ * against an ancestor container, not itself. 1u = 1% of the stage height.
+ */
+.body {
+  --u: 1cqh;
+  width: 100%;
+  height: 100%;
+  /* 5cqh at the top and bottom, 5cqw (8.889u) at the sides. */
+  padding: calc(var(--u) * 5) calc(var(--u) * 8.889);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+@supports not (height: 1cqh) {
+  .body {
+    --u: min(1vh, 0.5625vw);
+  }
+}
+
+/* Set by <Stage>: the projector view never scrolls. */
+:global(html.stage-page),
+:global(html.stage-page) body {
+  height: 100%;
+  overflow: hidden;
+}

@@ -1,6 +1,7 @@
 .hero {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
+  flex-grow: var(--fill, 1);
   flex-direction: column;
   justify-content: center;
   gap: 1.25rem;

@@ -49,6 +49,48 @@ export const SCREENS = [
   { id: 'play-kicked', title: 'Play: removed by host', group: 'play' },
   { id: 'play-session-over', title: 'Play: game ended', group: 'play' },
   { id: 'play-out-of-date', title: 'Play: page out of date', group: 'play' },
+
+  { id: 'present-lobby', title: 'Present: lobby', group: 'present' },
+  { id: 'present-lobby-400', title: 'Present: lobby with 400 players', group: 'present' },
+  { id: 'present-get-ready', title: 'Present: get ready', group: 'present' },
+  { id: 'present-question-open', title: 'Present: question open', group: 'present' },
+  { id: 'present-question-image', title: 'Present: question with an image', group: 'present' },
+  {
+    id: 'present-question-long',
+    title: 'Present: 200-character prompt, four 80-character options',
+    group: 'present',
+  },
+  { id: 'present-reveal-single', title: 'Present: reveal, single choice', group: 'present' },
+  { id: 'present-reveal-truefalse', title: 'Present: reveal, true or false', group: 'present' },
+  { id: 'present-reveal-poll', title: 'Present: reveal, poll', group: 'present' },
+  { id: 'present-wordcloud', title: 'Present: word cloud', group: 'present' },
+  { id: 'present-open', title: 'Present: open-ended responses', group: 'present' },
+  { id: 'present-rating', title: 'Present: rating', group: 'present' },
+  { id: 'present-leaderboard', title: 'Present: leaderboard', group: 'present' },
+  { id: 'present-podium', title: 'Present: podium', group: 'present' },
+  {
+    id: 'present-ended-unscored',
+    title: 'Present: game over, no scored questions',
+    group: 'present',
+  },
+  { id: 'present-help', title: 'Present: keyboard help', group: 'present' },
+
+  { id: 'host-login', title: 'Host: sign in', group: 'host' },
+  { id: 'host-dashboard', title: 'Host: dashboard', group: 'host' },
+  { id: 'host-live-lobby', title: 'Host: live control, lobby', group: 'host' },
+  { id: 'host-live-question', title: 'Host: live control, question open', group: 'host' },
+  { id: 'host-live-moderation', title: 'Host: live control, moderation queue', group: 'host' },
+  { id: 'host-live-reveal', title: 'Host: live control, results', group: 'host' },
+
+  { id: 'edit-quiz', title: 'Edit: quiz and question list', group: 'edit' },
+  { id: 'edit-question-single', title: 'Edit: multiple choice question', group: 'edit' },
+  { id: 'edit-question-truefalse', title: 'Edit: true or false question', group: 'edit' },
+  { id: 'edit-question-poll', title: 'Edit: poll question', group: 'edit' },
+  { id: 'edit-question-wordcloud', title: 'Edit: word cloud question', group: 'edit' },
+  { id: 'edit-question-open', title: 'Edit: open-ended question', group: 'edit' },
+  { id: 'edit-question-rating', title: 'Edit: rating question', group: 'edit' },
+  { id: 'edit-errors', title: 'Edit: validation errors', group: 'edit' },
+  { id: 'edit-conflict', title: 'Edit: save conflict', group: 'edit' },
 ] as const satisfies readonly ScreenMeta[];
 
 export type ScreenId = (typeof SCREENS)[number]['id'];

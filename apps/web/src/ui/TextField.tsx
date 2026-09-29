@@ -4,6 +4,11 @@ import { cx } from './cx.ts';
 import styles from './TextField.module.css';
 
 interface FrameProps {
+  /**
+   * Overrides the control's DOM id. The editor's error summary links to fields by a stable id
+   * derived from the field's path in the quiz.
+   */
+  fieldId?: string;
   label: string;
   hint?: string;
   /** Shown inline and announced (`role="alert"`) when it appears. */
@@ -19,10 +24,10 @@ interface Ids {
   counter: string;
 }
 
-function useIds(): Ids {
+function useIds(fieldId?: string): Ids {
   const uid = useId();
   return {
-    control: `${uid}-control`,
+    control: fieldId ?? `${uid}-control`,
     hint: `${uid}-hint`,
     error: `${uid}-error`,
     counter: `${uid}-counter`,
@@ -100,11 +105,12 @@ export function TextField({
   hint,
   error,
   counter,
+  fieldId,
   variant = 'default',
   inputRef,
   ...input
 }: TextFieldProps) {
-  const ids = useIds();
+  const ids = useIds(fieldId);
   return (
     <Frame label={label} hint={hint} error={error} counter={counter} ids={ids}>
       <input
@@ -124,8 +130,16 @@ export interface TextAreaProps
   inputRef?: Ref<HTMLTextAreaElement>;
 }
 
-export function TextArea({ label, hint, error, counter, inputRef, ...input }: TextAreaProps) {
-  const ids = useIds();
+export function TextArea({
+  label,
+  hint,
+  error,
+  counter,
+  fieldId,
+  inputRef,
+  ...input
+}: TextAreaProps) {
+  const ids = useIds(fieldId);
   return (
     <Frame label={label} hint={hint} error={error} counter={counter} ids={ids}>
       <textarea

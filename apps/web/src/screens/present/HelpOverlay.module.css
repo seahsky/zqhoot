@@ -1,0 +1,80 @@
+/* Sized in stage units: the overlay is a descendant of the stage body, which defines `--u`. */
+.dialog {
+  width: calc(var(--u) * 120);
+  max-width: calc(100vw - 2rem);
+  max-height: calc(var(--u) * 88);
+  padding: calc(var(--u) * 2.5) calc(var(--u) * 4);
+  border: max(3px, calc(var(--u) * 0.5)) solid var(--ink);
+  border-radius: calc(var(--u) * 1.6);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  overflow: auto;
+}
+
+.dialog::backdrop {
+  background: rgb(11 16 32 / 0.6);
+}
+
+.title {
+  margin-bottom: calc(var(--u) * 1.5);
+  font-size: calc(var(--u) * 5);
+  font-weight: 800;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--u) * 0.9);
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: calc(var(--u) * 50) minmax(0, 1fr);
+  align-items: center;
+  gap: calc(var(--u) * 2);
+}
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--u) * 0.8);
+}
+
+.key {
+  padding: calc(var(--u) * 0.2) calc(var(--u) * 1.2);
+  border: max(2px, calc(var(--u) * 0.35)) solid var(--ink);
+  border-radius: calc(var(--u) * 0.8);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: calc(var(--u) * 3.8);
+  font-weight: 800;
+}
+
+.does {
+  margin: 0;
+  font-size: calc(var(--u) * 3.8);
+  font-weight: 600;
+}
+
+.note {
+  margin-top: calc(var(--u) * 1.5);
+  font-size: calc(var(--u) * 3.5);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.close {
+  margin-top: calc(var(--u) * 1.5);
+  min-height: max(28px, calc(var(--u) * 5.5));
+  padding: 0 calc(var(--u) * 3);
+  border: max(2px, calc(var(--u) * 0.4)) solid var(--ink);
+  border-radius: calc(var(--u) * 1.2);
+  background: var(--ink);
+  color: var(--bg);
+  font-family: inherit;
+  font-size: calc(var(--u) * 4);
+  font-weight: 800;
+  cursor: pointer;
+}

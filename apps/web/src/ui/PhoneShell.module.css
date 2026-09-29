@@ -1,4 +1,13 @@
+/*
+ * Phones anchor actions and answers to the bottom, in the thumb zone. On a tablet or a
+ * laptop that would strand them a screen away from the field they belong to, so above the
+ * breakpoint the content is grouped and centred instead. Screens read these three
+ * properties rather than repeating the media query: `--push` is the margin above bottom
+ * groups, `--fill` says whether a section stretches to the free height.
+ */
 .shell {
+  --push: auto;
+  --fill: 1;
   display: flex;
   justify-content: center;
   min-height: 100vh;
@@ -28,4 +37,19 @@
   flex-direction: column;
   gap: var(--gutter);
   min-width: 0;
+}
+
+@media (min-width: 700px) and ((orientation: landscape) or (min-height: 900px)) {
+  .shell {
+    --push: clamp(1.5rem, 4vh, 3rem);
+    --fill: 0;
+  }
+
+  /* Spacers rather than `justify-content: center`, which would push the top of a tall
+     screen out of reach instead of scrolling. */
+  .main::before,
+  .main::after {
+    content: '';
+    flex: 1 1 0;
+  }
 }

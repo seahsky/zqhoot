@@ -39,3 +39,9 @@
   border-style: dashed;
   cursor: not-allowed;
 }
+
+.compact {
+  min-height: 2.75rem;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+}

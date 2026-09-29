@@ -4,6 +4,16 @@ import { SCREENS, skipsHorizontalScrollCheck } from '../src/dev/manifest.ts';
 import * as Q from '../src/dev/fixtures/questions.ts';
 import { FIXTURE_MESSAGES, PLAY_FIXTURES } from '../src/dev/fixtures/player.ts';
 import { announcementFor } from '../src/screens/play/announce.ts';
+import { announcementFor as presentAnnouncement } from '../src/screens/present/announce.ts';
+import { EDIT_BROKEN, EDIT_QUIZ, issuesOf } from '../src/dev/fixtures/edit.ts';
+import { HOST_LIVE_FIXTURES } from '../src/dev/fixtures/host.ts';
+import { HOST_FIXTURE_MESSAGES } from '../src/dev/fixtures/hostState.ts';
+import { OPEN_QUESTION_COUNTS, PRESENT_FIXTURES } from '../src/dev/fixtures/present.ts';
+import { names, roster } from '../src/dev/fixtures/hostSnapshots.ts';
+import { NOW } from '../src/dev/fixtures/common.ts';
+import { presenterView } from '../src/state/presenterView.ts';
+import { validateDraft } from '../src/state/editor.ts';
+import { HostSnapshot, Quiz, QuizInput } from '@zqhoot/protocol';
 
 /** The screens this task must deliver (docs/tasks/W1-web-a.md). */
 const REQUIRED = [
@@ -32,6 +42,37 @@ const REQUIRED = [
   'play-reconnecting',
   'play-kicked',
   'play-session-over',
+  'present-lobby',
+  'present-lobby-400',
+  'present-get-ready',
+  'present-question-open',
+  'present-question-image',
+  'present-question-long',
+  'present-reveal-single',
+  'present-reveal-truefalse',
+  'present-reveal-poll',
+  'present-wordcloud',
+  'present-open',
+  'present-rating',
+  'present-leaderboard',
+  'present-podium',
+  'present-ended-unscored',
+  'present-help',
+  'host-login',
+  'host-dashboard',
+  'host-live-lobby',
+  'host-live-question',
+  'host-live-moderation',
+  'host-live-reveal',
+  'edit-quiz',
+  'edit-question-single',
+  'edit-question-truefalse',
+  'edit-question-poll',
+  'edit-question-wordcloud',
+  'edit-question-open',
+  'edit-question-rating',
+  'edit-errors',
+  'edit-conflict',
 ];
 
 describe('gallery manifest', () => {
@@ -136,5 +177,115 @@ describe('play fixtures', () => {
     for (const [id, state] of Object.entries(PLAY_FIXTURES)) {
       expect(announcementFor(state.view).length, id).toBeGreaterThan(3);
     }
+  });
+});
+
+describe('presenter fixtures', () => {
+  it('have a fixture for every present screen and none that are unlisted', () => {
+    const present = SCREENS.map((s) => s.id as string).filter((id) => id.startsWith('present-'));
+    expect(Object.keys(PRESENT_FIXTURES).sort()).toEqual(present.sort());
+  });
+
+  it('every message the host fixtures send is valid protocol', () => {
+    expect(HOST_FIXTURE_MESSAGES.length).toBeGreaterThan(20);
+    for (const msg of HOST_FIXTURE_MESSAGES) {
+      expect(ServerMessage.safeParse(msg).success, JSON.stringify(msg).slice(0, 120)).toBe(true);
+    }
+  });
+
+  it('every host snapshot they hold parses, so the wire shape is what a server would send', () => {
+    for (const [id, fx] of Object.entries(PRESENT_FIXTURES)) {
+      expect(HostSnapshot.safeParse(fx.state.snapshot).success, id).toBe(true);
+    }
+    for (const [id, state] of Object.entries(HOST_LIVE_FIXTURES)) {
+      expect(HostSnapshot.safeParse(state.snapshot).success, id).toBe(true);
+    }
+  });
+
+  it('each lands on the screen its name promises', () => {
+    const expected: Record<string, string> = {
+      'present-lobby': 'lobby',
+      'present-lobby-400': 'lobby',
+      'present-get-ready': 'get-ready',
+      'present-question-open': 'question',
+      'present-question-image': 'question',
+      'present-question-long': 'question',
+      'present-reveal-single': 'reveal',
+      'present-reveal-truefalse': 'reveal',
+      'present-reveal-poll': 'reveal',
+      'present-wordcloud': 'reveal',
+      'present-open': 'reveal',
+      'present-rating': 'reveal',
+      'present-leaderboard': 'leaderboard',
+      'present-podium': 'podium',
+      'present-ended-unscored': 'thanks',
+      'present-help': 'lobby',
+    };
+    for (const [id, screen] of Object.entries(expected)) {
+      const fx = PRESENT_FIXTURES[id as keyof typeof PRESENT_FIXTURES];
+      expect(presenterView(fx.state, NOW).screen, id).toBe(screen);
+    }
+  });
+
+  it('the open question carries the answer and a distribution, and the room screen shows neither', () => {
+    const fx = PRESENT_FIXTURES['present-question-open'];
+    // The fixture really does contain what must stay hidden.
+    const hosted = fx.state.snapshot?.question?.question;
+    expect(hosted?.type === 'single' && hosted.correctOptionId).toBe('option-mercury');
+    expect(fx.state.live?.stats).toMatchObject({ counts: OPEN_QUESTION_COUNTS });
+
+    const text = JSON.stringify(presenterView(fx.state, NOW));
+    expect(text).not.toContain('option-mercury');
+    for (const n of Object.values(OPEN_QUESTION_COUNTS)) {
+      expect(text).not.toMatch(new RegExp(`\\b${n}\\b`));
+    }
+  });
+
+  it('the 400-player lobby has 400 distinct nicknames within the length limit', () => {
+    const list = names(400);
+    expect(new Set(list).size).toBe(400);
+    for (const name of list) {
+      expect(name.length).toBeGreaterThanOrEqual(2);
+      expect(name.length).toBeLessThanOrEqual(LIMITS.nicknameMaxGraphemes);
+    }
+    expect(roster(400)).toHaveLength(400);
+    const view = presenterView(PRESENT_FIXTURES['present-lobby-400'].state, NOW);
+    expect(view.screen === 'lobby' && view.names.length).toBe(400);
+  });
+
+  it('every screen has a non-empty screen-reader announcement', () => {
+    for (const [id, fx] of Object.entries(PRESENT_FIXTURES)) {
+      expect(presentAnnouncement(presenterView(fx.state, NOW)).length, id).toBeGreaterThan(3);
+    }
+  });
+
+  it('the long-question fixture has the protocol maxima: 200-character prompt, four 80-character options', () => {
+    const q = PRESENT_FIXTURES['present-question-long'].state.snapshot?.question?.question;
+    if (q?.type !== 'single') throw new Error('expected a single-choice question');
+    expect(q.prompt).toHaveLength(LIMITS.questionPromptMax);
+    expect(q.options).toHaveLength(4);
+    for (const o of q.options) expect(o.text).toHaveLength(LIMITS.optionTextMax);
+  });
+});
+
+describe('editor fixtures', () => {
+  it('the sample quiz is a valid QuizInput with one question of every type', () => {
+    expect(QuizInput.safeParse(EDIT_QUIZ).success).toBe(true);
+    expect(EDIT_QUIZ.questions.map((q) => q.type)).toEqual([
+      'single',
+      'truefalse',
+      'poll',
+      'wordcloud',
+      'open',
+      'rating',
+    ]);
+    expect(validateDraft(EDIT_QUIZ).ok).toBe(true);
+  });
+
+  it('the broken quiz produces the issues the errors screen shows', () => {
+    const issues = issuesOf(EDIT_BROKEN);
+    expect(issues.length).toBeGreaterThanOrEqual(4);
+    expect(issues.some((i) => i.fieldId === 'f-title')).toBe(true);
+    expect(Quiz.safeParse(EDIT_BROKEN).success).toBe(false);
   });
 });
