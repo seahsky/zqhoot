@@ -1,0 +1,31 @@
+{
+  "name": "@zqhoot/server-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=dev.env src/main.ts",
+    "build": "tsx scripts/build.ts",
+    "start": "node --enable-source-maps dist/server.mjs",
+    "hash-password": "tsx cli/hash-password.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.1",
+    "@zqhoot/engine": "workspace:*",
+    "@zqhoot/protocol": "workspace:*",
+    "@zqhoot/service": "workspace:*",
+    "@zqhoot/store": "workspace:*",
+    "hono": "4.13.10",
+    "jose": "6.2.12",
+    "nanoid": "6.0.1",
+    "ws": "8.22.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.15"
+  }
+}
