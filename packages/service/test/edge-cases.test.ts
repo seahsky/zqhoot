@@ -263,26 +263,6 @@ describeWithStores('HTTP edge cases', (make) => {
     expect(h.logger.entries.error.at(-1)!.o).toMatchObject({ method: 'PUT' });
   });
 
-  it('keeps the failed-PIN memory bounded and forgets blocks when their window ends', async () => {
-    const h = await make();
-    const g = await startGame(h);
-    h.overrides.hitRateLimit = async () => false; // every miss puts its IP over the limit
-    for (let i = 0; i < 1005; i++) {
-      const res = await h.api('GET', '/api/join/000000', { ip: `flood-${i}` });
-      expect(res.status).toBe(429);
-    }
-    h.overrides = {};
-    // Whether an IP was remembered or not, the block never outlives its window.
-    expect((await h.api('GET', `/api/join/${g.pin}`, { ip: 'flood-0' })).status).toBe(429);
-    h.clock.advance(60_000);
-    expect((await h.api('GET', `/api/join/${g.pin}`, { ip: 'flood-0' })).status).toBe(200);
-    expect((await h.api('GET', `/api/join/${g.pin}`, { ip: 'flood-1004' })).status).toBe(200);
-    // A new block after the window pruned the old ones.
-    h.overrides.hitRateLimit = async () => false;
-    expect((await h.api('GET', '/api/join/000000', { ip: 'late' })).status).toBe(429);
-    h.overrides = {};
-  });
-
   it('creates quizzes for both hosts independently', async () => {
     const h = await make();
     await h.createQuiz(quizBody(), 'a');

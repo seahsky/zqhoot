@@ -1052,6 +1052,95 @@ export function runStoreContract(
           RangeError,
         );
       });
+
+      describe('peek', () => {
+        it('is true for a key that was never hit', async () => {
+          expect(await store.peekRateLimit(uid('rl'), 3, WINDOW, clock.now())).toBe(true);
+          expect(await store.peekRateLimit(uid('rl'), 0, WINDOW, clock.now())).toBe(true);
+        });
+
+        it('is true up to `limit` hits and false from `limit + 1`', async () => {
+          const key = uid('rl');
+          const t = clock.now();
+          for (let hits = 1; hits <= 3; hits++) {
+            await store.hitRateLimit(key, 3, WINDOW, t);
+            expect(await store.peekRateLimit(key, 3, WINDOW, t), `after ${hits} hits`).toBe(true);
+          }
+          await store.hitRateLimit(key, 3, WINDOW, t);
+          expect(await store.peekRateLimit(key, 3, WINDOW, t)).toBe(false);
+          await store.hitRateLimit(key, 3, WINDOW, t);
+          expect(await store.peekRateLimit(key, 3, WINDOW, t)).toBe(false);
+        });
+
+        it('agrees with the answer of the hit that crossed the limit', async () => {
+          const key = uid('rl');
+          const t = clock.now();
+          for (let i = 0; i < 6; i++) {
+            const within = await store.hitRateLimit(key, 4, WINDOW, t + i);
+            expect(await store.peekRateLimit(key, 4, WINDOW, t + i), `hit ${i + 1}`).toBe(within);
+          }
+        });
+
+        it('never increments', async () => {
+          const key = uid('rl');
+          const t = clock.now();
+          for (let i = 0; i < 25; i++) {
+            expect(await store.peekRateLimit(key, 2, WINDOW, t)).toBe(true);
+          }
+          // Twenty-five peeks left the count at zero: the first two real hits are still within.
+          expect(await store.hitRateLimit(key, 2, WINDOW, t)).toBe(true);
+          expect(await store.hitRateLimit(key, 2, WINDOW, t)).toBe(true);
+          expect(await store.hitRateLimit(key, 2, WINDOW, t)).toBe(false);
+          for (let i = 0; i < 25; i++) {
+            expect(await store.peekRateLimit(key, 2, WINDOW, t)).toBe(false);
+          }
+          // And the blocked count did not grow: with a higher limit it is exactly 3.
+          expect(await store.peekRateLimit(key, 3, WINDOW, t)).toBe(true);
+          expect(await store.peekRateLimit(key, 2, WINDOW, t)).toBe(false);
+        });
+
+        it('rolls over with the window', async () => {
+          const key = uid('rl');
+          const t = clock.now();
+          await store.hitRateLimit(key, 1, WINDOW, t + WINDOW - 1);
+          await store.hitRateLimit(key, 1, WINDOW, t + WINDOW - 2);
+          expect(await store.peekRateLimit(key, 1, WINDOW, t + WINDOW - 1)).toBe(false);
+          expect(await store.peekRateLimit(key, 1, WINDOW, t + WINDOW)).toBe(true);
+          await store.hitRateLimit(key, 1, WINDOW, t + WINDOW);
+          expect(await store.peekRateLimit(key, 1, WINDOW, t + WINDOW + 1)).toBe(true);
+          await store.hitRateLimit(key, 1, WINDOW, t + WINDOW + 1);
+          expect(await store.peekRateLimit(key, 1, WINDOW, t + WINDOW + 2)).toBe(false);
+          // The earlier window still holds its own count.
+          expect(await store.peekRateLimit(key, 1, WINDOW, t)).toBe(false);
+        });
+
+        it('peeks each key separately', async () => {
+          const [a, b] = [uid('rl'), uid('rl')];
+          const t = clock.now();
+          await store.hitRateLimit(a, 0, WINDOW, t);
+          expect(await store.peekRateLimit(a, 0, WINDOW, t)).toBe(false);
+          expect(await store.peekRateLimit(b, 0, WINDOW, t)).toBe(true);
+        });
+
+        it('treats a window past its expiry on the injected clock as absent', async () => {
+          const key = uid('rl');
+          const t = clock.now();
+          await store.hitRateLimit(key, 1, WINDOW, t);
+          await store.hitRateLimit(key, 1, WINDOW, t);
+          expect(await store.peekRateLimit(key, 1, WINDOW, t)).toBe(false);
+          // A window lives until its end plus 60 s.
+          advance(WINDOW + 60_000 - 1);
+          expect(await store.peekRateLimit(key, 1, WINDOW, t)).toBe(false);
+          advance(1);
+          expect(await store.peekRateLimit(key, 1, WINDOW, t)).toBe(true);
+        });
+
+        it('rejects a window that is not positive', async () => {
+          await expect(store.peekRateLimit(uid('rl'), 1, 0, clock.now())).rejects.toBeInstanceOf(
+            RangeError,
+          );
+        });
+      });
     });
 
     describe('isolation from callers', () => {

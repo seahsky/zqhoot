@@ -82,6 +82,10 @@ Operations, as implemented:
   `attribute_exists(pk) AND expiresAt > :nowSec`.
 - `hitRateLimit`: `windowStart = now - now % windowMs`, `UpdateItem ADD count 1`, returns
   `count <= limit`.
+- `peekRateLimit`: the same `windowStart` and key, one strongly consistent `GetItem` on the
+  rate-limit item (no write). An item past its TTL counts as absent, so the answer is
+  `(count ?? 0) <= limit`. The service calls it before a PIN lookup so that a block set through one
+  Lambda container is seen by all.
 - Transactions cancelled only by concurrent transactions on the same items (`TransactionConflict`,
   `ThrottlingError`) are retried up to eight times with jittered backoff; real condition
   failures are never retried.
@@ -147,6 +151,8 @@ Both stores treat a record whose `expiresAt` has passed as absent on every read.
   window end plus 60 s. `MemoryStore` starts a fresh count when it meets a window past that time;
   DynamoDB would keep counting an expired window that TTL has not deleted yet. The two only differ
   if a caller passes a `now` far in the past.
+  `peekRateLimit` reads the same window without changing it and treats an expired one as empty in
+  both stores.
 - `reservePin` returns `false` only when another live session holds the PIN. The session that
   holds it may claim it again, which replaces the claim and its expiry.
 

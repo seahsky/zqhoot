@@ -538,6 +538,14 @@ export class MemoryStore implements Store {
     return count <= limit;
   }
 
+  async peekRateLimit(key: string, limit: number, windowMs: number, now: number): Promise<boolean> {
+    if (!(windowMs > 0)) throw new RangeError('windowMs must be positive');
+    const windowStart = now - (now % windowMs);
+    const current = this.#rateWindows.get(`${windowStart}#${key}`);
+    const count = current !== undefined && current.expiresAt > this.#now() ? current.count : 0;
+    return count <= limit;
+  }
+
   // --- Internals -------------------------------------------------------------------
 
   #live<T>(entry: Stamped<T> | undefined): Stamped<T> | undefined {

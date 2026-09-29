@@ -60,7 +60,6 @@ const PIN_ALLOCATION_ATTEMPTS = 10;
 const WARM_WAIT_MS = 500;
 const SESSION_LIST_LIMIT = 20;
 const MAX_BEARER_LENGTH = 4096;
-const MAX_TRACKED_BLOCKS = 1000;
 const MEDIA_PREFIX = '/api/media/';
 
 const JOIN_REASONS = {
@@ -183,8 +182,6 @@ export function createHttpApp(deps: HttpAppDeps): Hono<AppEnv> {
   const { store, clock, ids, hostAuth, media } = deps;
   const log = deps.logger ?? noopLogger;
   const app = new Hono<AppEnv>();
-  /** ip -> end of the window in which that IP went over the failed-PIN limit. */
-  const pinBlocks = new Map<string, number>();
 
   // ---- Cross-cutting -----------------------------------------------------------------
 
@@ -257,29 +254,21 @@ export function createHttpApp(deps: HttpAppDeps): Hono<AppEnv> {
     const ip = clientIp(c);
     const now = clock.now();
 
-    // `hitRateLimit` can only count, not read, so a successful lookup cannot ask the store
-    // whether the IP is over its limit. The instance remembers the block it observed instead.
-    const blockedUntil = pinBlocks.get(ip);
-    if (blockedUntil !== undefined && blockedUntil > now) throw tooManyRequests(now, blockedUntil);
+    const counter = `pin:${ip}`;
+
+    // The block lives in the store, not in this instance: another Lambda container must refuse
+    // a valid PIN from an IP that went over the limit, or a 200 among 429s would still tell an
+    // attacker which guesses are live.
+    if (!(await store.peekRateLimit(counter, PIN_LOOKUP_LIMIT, PIN_LOOKUP_WINDOW_MS, now))) {
+      throw tooManyRequests(now, windowEnd(now, PIN_LOOKUP_WINDOW_MS));
+    }
 
     const found = await lookupPin(parsed.data, now);
     if (found !== null) return c.json(found);
 
     // Only misses count: a classroom shares one IP and every phone looks up a valid PIN.
-    const within = await store.hitRateLimit(
-      `pin:${ip}`,
-      PIN_LOOKUP_LIMIT,
-      PIN_LOOKUP_WINDOW_MS,
-      now,
-    );
-    if (!within) {
-      const until = windowEnd(now, PIN_LOOKUP_WINDOW_MS);
-      if (pinBlocks.size >= MAX_TRACKED_BLOCKS) {
-        for (const [key, end] of pinBlocks) if (end <= now) pinBlocks.delete(key);
-      }
-      // A full memory only costs this instance the shortcut; the store's counter still applies.
-      if (pinBlocks.size < MAX_TRACKED_BLOCKS) pinBlocks.set(ip, until);
-      throw tooManyRequests(now, until);
+    if (!(await store.hitRateLimit(counter, PIN_LOOKUP_LIMIT, PIN_LOOKUP_WINDOW_MS, now))) {
+      throw tooManyRequests(now, windowEnd(now, PIN_LOOKUP_WINDOW_MS));
     }
     throw notFound('no game with that PIN');
   });

@@ -122,4 +122,9 @@ export interface Store {
    * `now` and returns true while the count is within `limit`.
    */
   hitRateLimit(key: string, limit: number, windowMs: number, now: number): Promise<boolean>;
+  /**
+   * Read-only companion to `hitRateLimit`: true while the current window's count for `key` is
+   * within `limit`. Does not increment. A missing or expired window counts as 0.
+   */
+  peekRateLimit(key: string, limit: number, windowMs: number, now: number): Promise<boolean>;
 }

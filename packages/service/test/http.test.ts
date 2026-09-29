@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LIMITS, Quiz } from '@zqhoot/protocol';
 import type { PinLookupResponse, QuizSummary, SessionSummary, UploadGrant } from '@zqhoot/protocol';
 import { ConflictError } from '@zqhoot/store';
+import { createHttpApp } from '../src/index.ts';
 import type { LocalLogin } from '../src/index.ts';
 import { HOST_TOKENS, describeWithStores } from './harness.ts';
 import type { Harness } from './harness.ts';
@@ -27,6 +28,28 @@ function expectSecurityHeaders(res: { headers: Headers }) {
 }
 
 const errorBody = (res: { json: <T>() => T }) => res.json<{ error: string; message: string }>();
+
+/**
+ * A second HTTP app over the same store and clock, as another Lambda container would be: it
+ * shares nothing with `h.app` except what lives in the store.
+ */
+function secondInstance(h: Harness) {
+  const app = createHttpApp({
+    store: h.store,
+    clock: h.clock,
+    ids: h.ids,
+    hostAuth: h.hostAuth,
+    media: h.media,
+    logger: h.logger,
+    engine: h.engine,
+    info: { target: 'aws', version: 'test' },
+    clientIp: (c) => c.req.header('x-test-ip') ?? h.ip,
+  });
+  return async (path: string, ip: string) => {
+    const res = await app.request(path, { headers: { 'x-test-ip': ip } });
+    return { status: res.status, retryAfter: res.headers.get('retry-after') };
+  };
+}
 
 describeWithStores('HTTP app', (make) => {
   describe('cross-cutting rules', () => {
@@ -236,6 +259,101 @@ describeWithStores('HTTP app', (make) => {
         expect((await h.api('GET', '/api/join/abc', { ip: 'typo' })).status).toBe(400);
       expect((await h.api('GET', '/api/join/000000', { ip: 'typo' })).status).toBe(404);
       expect(h.calls.filter((c) => c === 'hitRateLimit')).toHaveLength(1);
+    });
+
+    describe('block shared through the store', () => {
+      const overLimit = async (h: Harness, ip: string) => {
+        for (let i = 0; i < 30; i++) {
+          expect((await h.api('GET', '/api/join/000000', { ip })).status, `miss ${i + 1}`).toBe(
+            404,
+          );
+        }
+        expect((await h.api('GET', '/api/join/000000', { ip })).status).toBe(429);
+      };
+
+      it('blocks a valid PIN on a second instance that never saw the misses', async () => {
+        const h = await make();
+        const g = await startGame(h);
+        const instanceB = secondInstance(h);
+        const ip = 'shared-nat-1';
+        const path = `/api/join/${g.pin}`;
+
+        await overLimit(h, ip); // instance A
+        const hit = await instanceB(path, ip);
+        expect(hit.status).toBe(429);
+        expect(Number(hit.retryAfter)).toBeGreaterThan(0);
+        expect((await instanceB('/api/join/000000', ip)).status).toBe(429);
+        expect((await instanceB(path, 'shared-nat-2')).status).toBe(200);
+
+        h.clock.advance(59_000);
+        expect((await instanceB(path, ip)).status).toBe(429);
+        h.clock.advance(1000);
+        expect((await instanceB(path, ip)).status).toBe(200);
+        expect((await h.api('GET', path, { ip })).status).toBe(200);
+      });
+
+      it('blocks in both directions and adds up misses across instances', async () => {
+        const h = await make();
+        const g = await startGame(h);
+        const instanceB = secondInstance(h);
+        const ip = 'shared-nat-3';
+        // Alternating instances, 30 misses in all: neither has seen more than 15 of them.
+        for (let i = 0; i < 30; i++) {
+          const res =
+            i % 2 === 0
+              ? await instanceB('/api/join/000000', ip)
+              : await h.api('GET', '/api/join/000000', { ip });
+          expect(res.status, `miss ${i + 1}`).toBe(404);
+        }
+        expect((await instanceB('/api/join/000000', ip)).status).toBe(429);
+        expect((await h.api('GET', `/api/join/${g.pin}`, { ip })).status).toBe(429);
+      });
+
+      it('never counts successful lookups: 400 from one IP, across instances, all succeed', async () => {
+        const h = await make();
+        const g = await startGame(h);
+        const instanceB = secondInstance(h);
+        const ip = 'big-classroom';
+        for (let i = 0; i < 400; i++) {
+          const res =
+            i % 2 === 0
+              ? await h.api('GET', `/api/join/${g.pin}`, { ip })
+              : await instanceB(`/api/join/${g.pin}`, ip);
+          expect(res.status, `lookup ${i + 1}`).toBe(200);
+        }
+        expect(h.calls.filter((c) => c === 'hitRateLimit')).toHaveLength(0);
+        // The counter is still at zero: a full 30 misses fit.
+        for (let i = 0; i < 30; i++) {
+          expect((await h.api('GET', '/api/join/000000', { ip })).status, `miss ${i + 1}`).toBe(
+            404,
+          );
+        }
+        expect((await h.api('GET', '/api/join/000000', { ip })).status).toBe(429);
+      });
+
+      it('reads the block before it looks anything up', async () => {
+        const h = await make();
+        const g = await startGame(h);
+        const ip = 'order-check';
+
+        h.resetCalls();
+        expect((await h.api('GET', `/api/join/${g.pin}`, { ip })).status).toBe(200);
+        expect(h.calls[0]).toBe('peekRateLimit');
+        expect(h.calls).not.toContain('hitRateLimit');
+
+        h.resetCalls();
+        expect((await h.api('GET', '/api/join/000000', { ip })).status).toBe(404);
+        expect(h.calls.slice(0, 2)).toEqual(['peekRateLimit', 'getSessionIdByPin']);
+        expect(h.calls.at(-1)).toBe('hitRateLimit');
+
+        // One miss is already counted, so 29 more are within the limit and the 31st is not.
+        for (let i = 0; i < 29; i++) await h.api('GET', '/api/join/000000', { ip });
+        expect((await h.api('GET', '/api/join/000000', { ip })).status).toBe(429);
+        h.resetCalls();
+        expect((await h.api('GET', `/api/join/${g.pin}`, { ip })).status).toBe(429);
+        // A blocked IP costs one read and touches neither the PIN nor the session.
+        expect(h.calls).toEqual(['peekRateLimit']);
+      });
     });
   });
 

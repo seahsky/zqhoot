@@ -192,14 +192,14 @@ hosts, `scheduleClose(sid, i, deadline + answerGraceMs)` when there is a deadlin
 - **Snapshot on connect.** `join`, `resume` and `host.hello` read the session after registering the
   connection, so a broadcast cannot be missed between the read and the registration.
 - **PIN lookups.** `GET /api/join/:pin` counts only misses (`hitRateLimit('pin:'+ip, 30, 1 min)`), so a
-  classroom behind one IP is never limited by successful lookups. `Store.hitRateLimit` can only
-  increment, not read, so a successful lookup cannot ask the store whether the IP is already over the
-  limit. Each instance remembers the blocks it observed and answers every lookup from that IP with 429
-  until the window ends. An instance that has not seen the block (another Lambda container) still
-  serves successful lookups; failed lookups are refused everywhere. This falls short of "every lookup
-  from a blocked IP gets 429" on Lambda. Closing it needs a read-only `Store` operation (for example
-  `peekRateLimit(key, limit, windowMs, now)`, called before `lookupPin`), which is a change to the
-  store contract and outside this package; the service will use it once it exists.
+  classroom behind one IP is never limited by successful lookups. The block itself lives in the store:
+  every lookup first calls `peekRateLimit('pin:'+ip, 30, 1 min, now)`, which reads the same window
+  counter without incrementing it, and an IP over the limit gets 429 for every lookup, hit or miss,
+  before the PIN is read. The app keeps no per-instance block state, so any Lambda container refuses a
+  blocked IP, and a live PIN cannot be told from a dead one by a 200 among 429s. A successful lookup
+  never increments the counter. Malformed PINs get 400 before any store access and are not counted.
+  A peek and a later miss are not atomic: requests in flight when the 31st miss lands may still be
+  answered, but the next lookup from that IP is refused.
 - **Moderation after the reveal.** `host.moderate` writes the response status, then, while the session
   shows that question's reveal, re-derives the stored result with the engine's `refreshModeration`
   (open-ended statuses, word cloud words) from the responses' current statuses and sends `host.state`

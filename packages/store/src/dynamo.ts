@@ -709,6 +709,14 @@ export class DynamoStore implements Store {
     return count <= limit;
   }
 
+  async peekRateLimit(key: string, limit: number, windowMs: number, now: number): Promise<boolean> {
+    if (!(windowMs > 0)) throw new RangeError('windowMs must be positive');
+    const windowStart = now - (now % windowMs);
+    const item = await this.#get(rateLimitKey(key, windowStart));
+    const count = item?.count;
+    return (typeof count === 'number' ? count : 0) <= limit;
+  }
+
   // --- Internals -------------------------------------------------------------------
 
   #nowSeconds(): number {
