@@ -52,6 +52,11 @@ export const playerKey = (sessionId: string, playerId: string): ItemKey => ({
   sk: `PLAYER#${playerId}`,
 });
 export const PLAYER_SK_PREFIX = 'PLAYER#';
+/** Seats taken in a capped session; `PCOUNT` shares no prefix with `PLAYER#`, so player queries never see it. */
+export const playerCountKey = (sessionId: string): ItemKey => ({
+  pk: sessionPk(sessionId),
+  sk: 'PCOUNT',
+});
 export const nickKey = (sessionId: string, nicknameKey: string): ItemKey => ({
   pk: sessionPk(sessionId),
   sk: `NICK#${nicknameKey}`,

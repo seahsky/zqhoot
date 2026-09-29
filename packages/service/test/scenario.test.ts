@@ -125,6 +125,7 @@ describeWithStores('full game scenario', (make) => {
         type: 'single',
         answered: 9,
         totalPlayers: 12,
+        expected: 12,
         counts: { 'opt-paris': 7, 'opt-rome': 2, 'opt-oslo': 0 },
       },
     });
@@ -396,6 +397,7 @@ describeWithStores('full game scenario', (make) => {
       type: 'wordcloud',
       answered: 5,
       totalPlayers: 11,
+      expected: 11,
       words: [
         { text: 'sun', count: 3 },
         { text: 'moon', count: 2 },

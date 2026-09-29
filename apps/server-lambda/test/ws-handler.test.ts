@@ -220,3 +220,115 @@ describe('$default and $disconnect', () => {
     expect(result.statusCode).toBe(400);
   });
 });
+
+describe('the source address of a frame (failed-PIN limit, ADR-0013)', () => {
+  const joinFrom = async (name: string, pin: string, sourceIp: string | null, nick = 'Kid') => {
+    await h.connect(name);
+    await h.send(name, { type: 'join', v, pin, nickname: nick }, undefined, sourceIp);
+    return { message: h.transport.to(h.cid(name)).at(-1) };
+  };
+
+  it('hands requestContext.identity.sourceIp to the service, and nothing when the event has none', async () => {
+    const { createWsHandler } = await import('../src/ws-handler.ts');
+    const seen: Array<{ raw: string; info: unknown }> = [];
+    const spy = createWsHandler({
+      service: {
+        warm: async () => {},
+        onConnect: async () => ({ accept: true }),
+        onDisconnect: async () => {},
+        onMessage: async (_id, raw, _receivedAt, info) => void seen.push({ raw, info }),
+      },
+    });
+    const frame = (identity?: { sourceIp?: string }) => ({
+      body: '{"type":"ping","t":1}',
+      requestContext: {
+        routeKey: '$default',
+        connectionId: 'c',
+        requestTimeEpoch: 1,
+        ...(identity !== undefined ? { identity } : {}),
+      },
+    });
+    await spy(frame({ sourceIp: '203.0.113.44' }));
+    await spy(frame({}));
+    await spy(frame());
+    expect(seen.map((s) => s.info)).toEqual([{ sourceIp: '203.0.113.44' }, {}, {}]);
+  });
+
+  it('refuses the 31st failed PIN from one address, on connections of their own', async () => {
+    const ip = '192.0.2.10';
+    for (let i = 0; i < 30; i++) {
+      expect(await joinFrom(`guess-${i}`, '000000', ip)).toMatchObject({
+        message: { type: 'error', code: 'not-found' },
+      });
+    }
+    expect(await joinFrom('guess-30', '000000', ip)).toMatchObject({
+      message: { type: 'error', code: 'rate-limited', ref: 'join' },
+    });
+  });
+
+  it('refuses a live PIN from the blocked address and admits the same PIN from another', async () => {
+    const { pin } = await h.createSession();
+    const blocked = '192.0.2.11';
+    for (let i = 0; i < 31; i++) await joinFrom(`walk-${i}`, '000000', blocked);
+    expect(await joinFrom('live-blocked', pin, blocked)).toMatchObject({
+      message: { type: 'error', code: 'rate-limited' },
+    });
+    expect(await h.store.getConnection(h.cid('live-blocked'))).toBeNull();
+    expect(await joinFrom('live-other', pin, '192.0.2.12', 'Other')).toMatchObject({
+      message: { type: 'welcome', role: 'player' },
+    });
+  });
+
+  it('never limits a classroom of valid joins from one address', async () => {
+    const { pin } = await h.createSession();
+    for (let i = 0; i < 40; i++) {
+      expect(await joinFrom(`desk-${i}`, pin, '192.0.2.13', `Desk ${i}`)).toMatchObject({
+        message: { type: 'welcome' },
+      });
+    }
+    for (let i = 0; i < 30; i++) {
+      expect(await joinFrom(`typo-${i}`, '000000', '192.0.2.13')).toMatchObject({
+        message: { code: 'not-found' },
+      });
+    }
+  });
+
+  it('keys an event without an address as "unknown"', async () => {
+    // Nothing else in this file sends an event without one, so the shared window is ours.
+    h.clock.advance(60_000 * (1 + Math.floor(Math.random() * 100_000)));
+    for (let i = 0; i < 30; i++) await joinFrom(`anon-${i}`, '000000', null);
+    expect(await joinFrom('anon-30', '000000', null)).toMatchObject({
+      message: { code: 'rate-limited' },
+    });
+    expect(await joinFrom('named', '000000', '192.0.2.14')).toMatchObject({
+      message: { code: 'not-found' },
+    });
+  });
+});
+
+describe('the host timer close (ADR-0005)', () => {
+  it('waits for the end of the answer grace with the sleep port, then closes', async () => {
+    const game = await openFirstQuestion(['grace']);
+    const [player] = game.players as [string];
+    h.clock.set(game.deadline + 50);
+    const before = h.sleeps.length;
+
+    await h.send(game.host, { type: 'host.close', questionIndex: 0, reason: 'timer' });
+
+    // 700 ms until deadline + grace, then the reveal settle.
+    expect(h.sleeps.slice(before)).toEqual([TIMING.answerGraceMs - 50, 1000]);
+    expect(await h.store.getSession(game.sessionId)).toMatchObject({
+      phase: 'reveal',
+      closedAt: game.deadline + TIMING.answerGraceMs,
+    });
+    expect(h.transport.last(h.cid(player), 'reveal').you.answered).toBe(false);
+  });
+
+  it('does not wait for a manual close', async () => {
+    const game = await openFirstQuestion(['manual']);
+    h.clock.set(game.deadline + 50);
+    const before = h.sleeps.length;
+    await h.send(game.host, { type: 'host.close', questionIndex: 0, reason: 'manual' });
+    expect(h.sleeps.slice(before)).toEqual([1000]);
+  });
+});

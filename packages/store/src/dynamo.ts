@@ -37,6 +37,7 @@ import {
   nickKey,
   parseResponseId,
   pinKey,
+  playerCountKey,
   playerKey,
   quizKey,
   rateLimitKey,
@@ -88,6 +89,17 @@ const RETRYABLE_CANCELLATIONS = new Set([
 ]);
 const TRANSACTION_ATTEMPTS = 8;
 const CONNECTION_ATTEMPTS = 3;
+/**
+ * Errors of a request DynamoDB refused before it ran anything (throttling, once the SDK's own
+ * retries are used up, and a malformed request), so nothing was written. A timeout, a network
+ * error or a 5xx is not among them: the write may have committed before the reply was lost.
+ */
+const REFUSED_BEFORE_EXECUTION = new Set([
+  'ThrottlingException',
+  'ProvisionedThroughputExceededException',
+  'RequestLimitExceeded',
+  'ValidationException',
+]);
 
 /**
  * Conditions on TTL'd items. DynamoDB deletes expired items lazily (ADR-0003), so a bare
@@ -109,6 +121,11 @@ const cancellationReasons = (error: unknown): CancellationReason[] | undefined =
     : undefined;
 const failedCondition = (reason: CancellationReason | undefined): boolean =>
   reason?.Code === 'ConditionalCheckFailed';
+/** Whether a failed `TransactWriteItems` is known not to have written anything. */
+const wroteNothing = (error: unknown): boolean =>
+  error instanceof ConflictError ||
+  cancellationReasons(error) !== undefined ||
+  REFUSED_BEFORE_EXECUTION.has(errorName(error) ?? '');
 
 /** Builds the stored item: record body, extra attributes, keys, and the TTL in epoch seconds. */
 function toItem(key: ItemKey, body: object, expiresAtMs?: number, extra: Item = {}): Item {
@@ -357,7 +374,83 @@ export class DynamoStore implements Store {
 
   // --- Players ---------------------------------------------------------------------
 
-  async addPlayer(player: PlayerRecord, expiresAt: number): Promise<AddPlayerResult> {
+  async addPlayer(
+    player: PlayerRecord,
+    expiresAt: number,
+    maxPlayers?: number,
+  ): Promise<AddPlayerResult> {
+    if (maxPlayers === undefined) return this.#insertPlayer(player, expiresAt);
+
+    // The seat is taken with a conditional update of one counter item, outside the insert
+    // transaction. Inside it, every join of a session would conflict with every other on that
+    // one item and be retried, which a class joining at once cannot afford; the update alone is
+    // serialised by DynamoDB without cancelling anyone. The price is a seat that stays taken if
+    // the invocation dies between the two writes, which costs one seat of a session's cap.
+    if (!(await this.#takeSeat(player.sessionId, expiresAt, maxPlayers))) return 'session-full';
+    try {
+      const result = await this.#insertPlayer(player, expiresAt);
+      if (result !== 'ok') await this.#releaseSeat(player.sessionId);
+      return result;
+    } catch (error) {
+      // Only an error that proves the player was not written gives the seat back: a cancelled
+      // transaction, or a request refused before it ran (throttled, invalid). A timeout, a
+      // network error or a 5xx can come after the transaction committed, and giving the seat
+      // back then would let one player too many in later, where keeping it costs one seat: the
+      // safer of the two failures.
+      if (wroteNothing(error)) await this.#releaseSeat(player.sessionId);
+      throw error;
+    }
+  }
+
+  async #takeSeat(sessionId: string, expiresAt: number, maxPlayers: number): Promise<boolean> {
+    if (!(maxPlayers > 0)) return false;
+    try {
+      await this.#doc.send(
+        new UpdateCommand({
+          TableName: this.#table,
+          Key: playerCountKey(sessionId),
+          UpdateExpression: 'SET #seats = if_not_exists(#seats, :none) + :one, #ttl = :ttl',
+          ConditionExpression: 'attribute_not_exists(#seats) OR #seats < :max',
+          ExpressionAttributeNames: { '#seats': 'seats', '#ttl': TTL_ATTRIBUTE },
+          ExpressionAttributeValues: {
+            ':none': 0,
+            ':one': 1,
+            ':max': maxPlayers,
+            ':ttl': toSeconds(expiresAt),
+          },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (isConditionFailed(error)) return false;
+      throw error;
+    }
+  }
+
+  /** Best effort: failing to give a seat back must not replace the outcome the caller gets. */
+  #releaseSeat(sessionId: string): Promise<void> {
+    return this.#returnSeat(sessionId).catch(() => undefined);
+  }
+
+  async #returnSeat(sessionId: string): Promise<void> {
+    try {
+      await this.#doc.send(
+        new UpdateCommand({
+          TableName: this.#table,
+          Key: playerCountKey(sessionId),
+          UpdateExpression: 'SET #seats = #seats - :one',
+          // Never below zero, and never a counter created by a give-back.
+          ConditionExpression: 'attribute_exists(#seats) AND #seats > :none',
+          ExpressionAttributeNames: { '#seats': 'seats' },
+          ExpressionAttributeValues: { ':one': 1, ':none': 0 },
+        }),
+      );
+    } catch (error) {
+      if (!isConditionFailed(error)) throw error;
+    }
+  }
+
+  async #insertPlayer(player: PlayerRecord, expiresAt: number): Promise<AddPlayerResult> {
     const create = this.#createCondition();
     try {
       await this.#transact([

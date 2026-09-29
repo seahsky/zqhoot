@@ -203,6 +203,33 @@ describe.skipIf(SKIP_DYNAMO)('DynamoStore', () => {
       });
     });
 
+    it('counts the seats of a capped session in one item that no player query reads', async () => {
+      const sid = uid('sess');
+      const expiresAt = clock.now() + DAY_MS;
+      const [a, b] = [makePlayer(sid), makePlayer(sid)];
+      await store.addPlayer(a, expiresAt, 5);
+      await store.addPlayer(b, expiresAt, 5);
+      expect(await rawItem(`SESS#${sid}`, 'PCOUNT')).toEqual({
+        pk: `SESS#${sid}`,
+        sk: 'PCOUNT',
+        seats: 2,
+        expiresAt: seconds(expiresAt),
+      });
+      expect(await store.countPlayers(sid)).toBe(2);
+      expect((await store.listPlayers(sid)).map((p) => p.playerId)).toEqual(
+        [a.playerId, b.playerId].sort(),
+      );
+      // A refused nickname gives its seat back; an uncapped insert never touches the item.
+      await store.addPlayer(makePlayer(sid, { nicknameKey: a.nicknameKey }), expiresAt, 5);
+      expect((await rawItem(`SESS#${sid}`, 'PCOUNT'))?.seats).toBe(2);
+      await store.addPlayer(makePlayer(sid), expiresAt);
+      expect((await rawItem(`SESS#${sid}`, 'PCOUNT'))?.seats).toBe(2);
+      // A session that never filled a seat has no counter, and a refused one does not create it.
+      const empty = uid('sess');
+      await store.addPlayer(makePlayer(empty), expiresAt, 0);
+      expect(await rawItem(`SESS#${empty}`, 'PCOUNT')).toBeUndefined();
+    });
+
     it('stores each connection twice, by id and by session', async () => {
       const sid = uid('sess');
       const conn = makeConnection(sid, { expiresAt: clock.now() + 3 * HOUR_MS + 1 });

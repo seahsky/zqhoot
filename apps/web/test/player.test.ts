@@ -457,6 +457,197 @@ describe('a resume racing a broadcast (per-connection sv rule)', () => {
   });
 });
 
+describe('a welcome that a broadcast overtook still says who the player is', () => {
+  const reconnect: PlayerAction[] = [
+    { type: 'connection', status: 'reconnecting' },
+    { type: 'connection', status: 'open' },
+  ];
+  const ann = { playerId: 'player-ann-01', nickname: 'Ann', score: 0, rank: null, streak: 0 };
+
+  it('fills the header when the question overtakes the first welcome of a page load', () => {
+    // The host presses Start as the resume is answered: sv 5 reaches the phone before sv 4.
+    const s = run(
+      questionMsg(single, { sv: 5 }),
+      welcome(snapshot({ sv: 4, you: ann })),
+      revealMsg(outcome({ score: 870, rank: 1 }), { sv: 6 }),
+    );
+    expect(s.me).toEqual({ ...ann, score: 870, rank: 1, streak: 3 });
+    expect(s.quizTitle).toBe('Friday night trivia');
+    expect(s.totalQuestions).toBe(8);
+    expect(s.view.screen).toBe('reveal');
+    expect(s.sv).toBe(6);
+  });
+
+  it('shows the nickname and the title straight away, on the stage the broadcast set', () => {
+    const s = run(questionMsg(single, { sv: 5 }), welcome(snapshot({ sv: 4, you: ann })));
+    expect(s.view.screen).toBe('get-ready');
+    expect(s.sv).toBe(5);
+    expect(s.me).toEqual(ann);
+    expect(s.quizTitle).toBe('Friday night trivia');
+  });
+
+  it('applies the score and rank when nothing newer set them', () => {
+    const s = run(
+      welcome(snapshot({ sv: 10, you: { ...ME, score: 1000, rank: 3, streak: 0 } })),
+      ...reconnect,
+      questionMsg(single, { sv: 12 }),
+      welcome(snapshot({ sv: 11, you: { ...ME, score: 1500, rank: 2, streak: 1 } })),
+    );
+    expect(s.me).toEqual({ ...ME, score: 1500, rank: 2, streak: 1 });
+    expect(s.standing).toEqual({ sv: 11, score: 1500, rank: 2, streak: 1 });
+    expect(s.view.screen).toBe('get-ready');
+    expect(s.sv).toBe(12);
+  });
+
+  it('keeps the score and rank a newer reveal, leaderboard or ended message set', () => {
+    const stale = (score: number) => welcome(snapshot({ sv: 11, you: { ...ME, score, rank: 9 } }));
+    const held = { ...ME, score: 2340, rank: 2, streak: 3 };
+    const start = [welcome(snapshot({ sv: 10 })), ...reconnect];
+
+    const afterReveal = run(...start, revealMsg(outcome(), { sv: 12 }), stale(1240));
+    expect(afterReveal.me).toEqual(held);
+    expect(afterReveal.view.screen).toBe('reveal');
+
+    const afterLeaderboard = run(
+      ...start,
+      {
+        type: 'leaderboard',
+        ts: T0 + 30_000,
+        sv: 12,
+        index: 2,
+        entries: [],
+        you: { score: 2340, rank: 2 },
+      },
+      stale(1240),
+    );
+    expect(afterLeaderboard.me).toMatchObject({ score: 2340, rank: 2, nickname: 'Riley' });
+
+    const afterEnded = run(
+      ...start,
+      {
+        type: 'ended',
+        ts: T0 + 60_000,
+        sv: 12,
+        podium: [],
+        totalPlayers: 6,
+        you: { score: 2340, rank: 2, correct: 3, answeredScored: 3, scoredQuestions: 3 },
+      },
+      stale(1240),
+    );
+    expect(afterEnded.me).toMatchObject({ score: 2340, rank: 2, nickname: 'Riley' });
+    expect(afterEnded.view.screen).toBe('ended');
+  });
+
+  it('keeps the score a reveal set while there was no me to patch (first welcome of a page load)', () => {
+    // Open, question sv 5, reveal sv 7, and only then the welcome that was built at sv 6.
+    const s = run(
+      questionMsg(single, { sv: 5 }),
+      revealMsg(outcome({ score: 870, rank: 1 }), { sv: 7 }),
+      welcome(questionSnap(single, -20_000, { sv: 6, phase: 'revealing', you: ann })),
+    );
+    expect(s.view.screen).toBe('reveal');
+    expect(s.sv).toBe(7);
+    // The header and the reveal screen agree: neither shows the score from before the reveal.
+    expect(s.me).toEqual({ ...ann, score: 870, rank: 1, streak: 3 });
+    expect(s.view).toMatchObject({ screen: 'reveal', outcome: { score: 870, rank: 1 } });
+    expect(s.standing).toEqual({ sv: 7, score: 870, rank: 1, streak: 3 });
+    expect(s.quizTitle).toBe('Friday night trivia');
+  });
+
+  it('does the same for a leaderboard or ended message, taking the streak from the welcome', () => {
+    const late = welcome(snapshot({ sv: 6, you: { ...ann, streak: 2 } }));
+    const afterLeaderboard = run(
+      {
+        type: 'leaderboard',
+        ts: T0 + 30_000,
+        sv: 7,
+        index: 2,
+        entries: [],
+        you: { score: 2340, rank: 2 },
+      },
+      late,
+    );
+    expect(afterLeaderboard.me).toEqual({ ...ann, score: 2340, rank: 2, streak: 2 });
+    expect(afterLeaderboard.view.screen).toBe('leaderboard');
+
+    const afterEnded = run(
+      {
+        type: 'ended',
+        ts: T0 + 60_000,
+        sv: 7,
+        podium: [],
+        totalPlayers: 6,
+        you: { score: 2340, rank: 2, correct: 3, answeredScored: 3, scoredQuestions: 3 },
+      },
+      late,
+    );
+    expect(afterEnded.me).toEqual({ ...ann, score: 2340, rank: 2, streak: 2 });
+    expect(afterEnded.view.screen).toBe('ended');
+  });
+
+  it('keeps the streak a reveal set when a leaderboard for the same player follows it', () => {
+    const s = run(
+      revealMsg(outcome({ score: 870, rank: 1 }), { sv: 7 }),
+      {
+        type: 'leaderboard',
+        ts: T0 + 30_000,
+        sv: 8,
+        index: 2,
+        entries: [],
+        you: { score: 870, rank: 1 },
+      },
+      welcome(snapshot({ sv: 6, you: { ...ann, streak: 0 } })),
+    );
+    expect(s.me).toEqual({ ...ann, score: 870, rank: 1, streak: 3 });
+  });
+
+  it('uses the welcome figures when they are not older than what a broadcast set', () => {
+    // A reveal at sv 6, a question at sv 8, and a welcome built at sv 7: the welcome is newer
+    // than the score the reveal carried, so it wins for the score even though it lost the race.
+    const s = run(
+      revealMsg(outcome({ score: 870, rank: 1 }), { sv: 6 }),
+      questionMsg(single, { sv: 8, index: 3 }),
+      welcome(snapshot({ sv: 7, you: { ...ann, score: 900, rank: 1, streak: 4 } })),
+    );
+    expect(s.me).toEqual({ ...ann, score: 900, rank: 1, streak: 4 });
+    expect(s.standing).toEqual({ sv: 7, score: 900, rank: 1, streak: 4 });
+    expect(s.sv).toBe(8);
+  });
+
+  it('takes identity from the stale welcome even where it keeps newer figures', () => {
+    const s = run(
+      welcome(snapshot({ sv: 10 })),
+      ...reconnect,
+      revealMsg(outcome(), { sv: 12 }),
+      welcome(snapshot({ sv: 11, quizTitle: 'Renamed', you: { ...ME, nickname: 'Riley B' } })),
+    );
+    expect(s.me).toMatchObject({ nickname: 'Riley B', score: 2340, rank: 2 });
+    expect(s.quizTitle).toBe('Renamed');
+  });
+
+  it('still drops what the stale welcome says about the game', () => {
+    const s = run(
+      questionMsg(single, { sv: 5 }),
+      tick(T0 + 3_500),
+      sent(choice('option-venus')),
+      welcome(questionSnap(cloud, -1_000, { sv: 4, questionIndex: 7, you: ann })),
+    );
+    expect(s.view).toMatchObject({ screen: 'submitted', responses: [choice('option-venus')] });
+    expect(s.sv).toBe(5);
+  });
+
+  it('is not needed for the first welcome of a connection, which applies whole whatever its sv', () => {
+    // Nothing applied yet since the connection started: the welcome is the first word and wins.
+    const s = run(
+      welcome(snapshot({ sv: 3, you: ann })),
+      ...reconnect,
+      welcome(snapshot({ sv: 2 })),
+    );
+    expect(s.me).toEqual(ME);
+    expect(s.sv).toBe(2);
+  });
+});
+
 describe('sv ordering', () => {
   it('ignores a question with a lower sv than already applied', () => {
     const s = run(welcome(snapshot({ sv: 20 })), questionMsg(single, { sv: 19 }));

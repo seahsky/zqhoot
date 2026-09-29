@@ -101,7 +101,9 @@ Node-only global. `test/boundary.test.ts` enforces this.
   `at` (a question's deadline plus the answer grace). Late or repeated timers are harmless: a timer
   for a question that is no longer open does nothing. `cancel(sessionId)` drops the pending timers
   of a session. After a restart, restore timers from the persisted `deadline` of sessions in phase
-  `question`. On Lambda there is no scheduler and the host client sends `host.close {reason:'timer'}`.
+  `question`. On Lambda there is no scheduler and the host client sends `host.close {reason:'timer'}`
+  at `deadline + answerGraceMs`. A timer close that arrives earlier is held back to that instant
+  (see `host.close` below), so it never cuts the answer grace short.
 - **HTTP**: mount the Hono app (`app.fetch`, or `hono/aws-lambda`'s `handle`). Provide `clientIp`
   (API Gateway `requestContext.http.sourceIp`, or the first `X-Forwarded-For` hop only behind a proxy
   you trust). Do not buffer request bodies for `PUT /api/media/*`: the app counts bytes while
@@ -120,22 +122,29 @@ Store calls, in order. `[x]` means conditional on the phase or the question type
 ### `join`
 
 1. `hitRateLimit('nick:'+connectionId, 10, 1 h)`. Over the limit: `error rate-limited`, close.
-2. `getSessionIdByPin` -> `getSession` -> `countPlayers` -> engine `checkJoinable` -> engine
+2. `peekRateLimit('pin:'+ip, 30, 1 min)`, the failed-PIN budget shared with `GET /api/join/:pin`
+   (`src/limits.ts`). `ip` is `info.sourceIp` of `onMessage`, or `unknown`. Over the limit:
+   `error rate-limited` (the connection stays open), before the PIN is looked at.
+3. `getSessionIdByPin` -> `getSession` -> `countPlayers` -> engine `checkJoinable` -> engine
    `normalizeNickname`. Refusals: `not-found`, `session-ended`, `session-locked`, `session-full`,
-   `nickname-invalid` (reason in `message`).
-3. Mint `playerId` and `token`; store only `sha256Hex(token)` (WebCrypto).
-4. `addPlayer` (`nickname-taken` gets that error) -> `putConnection` with
-   `expiresAt = min(meta.expiresAt, now + 3 h)`.
-5. `getSession` **again**, so the snapshot reflects the phase after the connection exists (a
+   `nickname-invalid` (reason in `message`). A `not-found` (unknown or expired PIN) also calls
+   `hitRateLimit('pin:'+ip, 30, 1 min)`, and the 31st miss in a window is refused as `rate-limited`
+   instead. Nothing else counts, so a classroom behind one IP joins with valid PINs all day.
+4. Mint `playerId` and `token`; store only `sha256Hex(token)` (WebCrypto).
+5. `addPlayer(player, expiresAt, meta.maxPlayers)`. The count read in step 3 only turns a full
+   session away early; the cap is enforced by the store, atomically, so a burst of joins admits
+   exactly `maxPlayers` and the rest get `session-full`. `nickname-taken` gets that error. Then
+   `putConnection` with `expiresAt = min(meta.expiresAt, now + 3 h)`.
+6. `getSession` **again**, so the snapshot reflects the phase after the connection exists (a
    transition committed between the first read and `putConnection` would otherwise skip this player
    and nothing replays it).
-6. `welcome {credentials, snapshot}` where the snapshot loads only what the phase shows: `getSnapshot`
+7. `welcome {credentials, snapshot}` where the snapshot loads only what the phase shows: `getSnapshot`
    (cached), `[getScoreboard unless lobby]`, `[listPlayers in leaderboard/ended]`,
    `[getQuestionResult in reveal]`.
-7. `listConnections` -> `roster {upsert:[{..., connected:true}]}` to hosts (skipped when the welcome
+8. `listConnections` -> `roster {upsert:[{..., connected:true}]}` to hosts (skipped when the welcome
    was undeliverable).
 
-`resume` is the same from step 5 on, after `getPlayer`, a constant-time compare of `sha256Hex(token)`
+`resume` is the same from step 6 on, after `getPlayer`, a constant-time compare of `sha256Hex(token)`
 with `tokenHash`, the kicked check and `getSession`. It also loads `[listPlayerResponses]` for the
 current question. An unknown player or an expired session is `not-found`, a wrong token
 `unauthorized`, a kicked player gets `kicked` and a close.
@@ -158,6 +167,19 @@ Nothing else is read or written: never META, never a counter, and hosts are not 
 
 ### `host.close` / `host.next` / timer -> reveal
 
+0. `host.close {reason:'timer'}` only: `getSession`. While the question is open and timed and
+   `now < deadline + answerGraceMs`, the close is not applied yet. With a scheduler (the VM) the
+   frame is dropped, because the scheduler closes at exactly that instant. Without one (Lambda) the
+   invocation waits the remainder with the `Sleep` port, at most `answerGraceMs`, and carries on.
+   `manual` and `all-answered` closes, and timer closes for a question that is not open, skip this.
+   Clients close at that instant by their own clock, and an answer that reaches the server after
+   the close commits is refused as `too-late` whatever its `receivedAt`. Only the timer close is
+   held: a `manual` close (or `host.next` from a question) that arrives in
+   `(deadline, deadline + answerGraceMs]` closes at once, and an answer still in flight inside
+   that window is refused. A host who presses "End question" when the presenter shows "Time's up"
+   at the bare deadline therefore cuts off the grace. This follows the rule that manual closes stay
+   immediate; holding them too, or disabling the control until `deadline + answerGraceMs`, is an
+   open question for the lead.
 1. `getConnection` (host binding) -> `getSession` + `getSnapshot` -> engine `applyHostCommand` (or
    `timerClose`). Not ok: the error goes to the requester. Effect `none`: `host.state` to the
    requester only.
@@ -165,7 +187,10 @@ Nothing else is read or written: never META, never a counter, and hosts are not 
    3 attempts, then `error conflict` (a timer just logs). A stale `from`, a repeated close or a timer
    racing a manual close therefore ends as a no-op.
 3. Effect `closing`: `scheduler.cancel`, wait `revealSettleMs`, then the reveal. Effect
-   `retry-reveal` (the host pressed next while `revealing`): the reveal without the wait.
+   `retry-reveal` (the host pressed next while `revealing`): wait what is left of `revealSettleMs`
+   counted from `closedAt` (never more than `revealSettleMs`), then the reveal. An answer that
+   passed its META check before the close and was acknowledged as accepted may still be on its
+   way to the store during that interval, so a second press must not reveal without it.
 4. **Reveal** (idempotent, [ADR-0006](../../docs/adr/0006-answers-aggregation-reveal.md)), up to 3 passes:
    1. `getSession`; it must still be `revealing` for that index, else stop.
    2. `getQuestionResult` + `getScoreboard`. A stored result with `appliedThrough >= i` means
@@ -195,6 +220,21 @@ hosts, `scheduleClose(sid, i, deadline + answerGraceMs)` when there is a deadlin
   connection. A player can hold several connections; every one receives player broadcasts.
 - **Snapshot on connect.** `join`, `resume` and `host.hello` read the session after registering the
   connection, so a broadcast cannot be missed between the read and the registration.
+- **PIN guessing over the WebSocket.** `join` draws on the same per-IP budget as the HTTP lookup
+  (same store counter, limit and window, in `src/limits.ts`), peeked first and spent only by a miss.
+  Adapters must therefore pass the client's address on every `onMessage`: Node reads it from the
+  upgrade request (`X-Forwarded-For` only behind a trusted proxy), Lambda from
+  `requestContext.identity.sourceIp`. A frame without one counts under `unknown`, as in HTTP.
+- **The player cap.** `maxPlayers` is enforced inside `Store.addPlayer` (a conditional write on
+  DynamoDB, one synchronous step in memory), not by the count read in `join`.
+- **Who a question waits for.** `host.stats` also lists the session's connections. Its
+  `totalPlayers` is every non-kicked player, as in the result of the closed question, and its
+  optional `expected` is the number of non-kicked players who are connected or have already
+  answered. A host closing on `answered >= expected` therefore closes when every connected player
+  has answered (ADR-0006). A player who answered and then left still counts as answered; one who
+  is offline without an answer does not hold the question open. Hosts that do not know `expected`
+  fall back to `totalPlayers`, which never closes early once someone has dropped out but is
+  otherwise safe.
 - **PIN lookups.** `GET /api/join/:pin` counts only misses (`hitRateLimit('pin:'+ip, 30, 1 min)`), so a
   classroom behind one IP is never limited by successful lookups. The block itself lives in the store:
   every lookup first calls `peekRateLimit('pin:'+ip, 30, 1 min, now)`, which reads the same window
@@ -255,7 +295,8 @@ IPs, and a fake clock in the year 2100 (so DynamoDB Local's TTL sweeper never to
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `scenario.test.ts`                                       | A full game with every question type, 12 players, reconnects, a kick, moderation, hand-computed scores, the CSV and answer secrecy |
 | `errors.test.ts`                                         | Every `ErrorCode`, oversize and bad frames, protocol version, bindings and roles                                                   |
-| `timing.test.ts`                                         | The answer window, `revealSettleMs`, timers and the scheduler                                                                      |
+| `timing.test.ts`                                         | The answer window, a timer close inside the grace, `revealSettleMs`, a reveal retried in the settle, timers and the scheduler      |
+| `admission.test.ts`                                      | The failed-PIN budget over the WebSocket (shared with HTTP) and the player cap under a burst of joins                              |
 | `races.test.ts`                                          | Double `host.next`, double close, timer vs manual close, a crash between reveal writes, concurrent answers                         |
 | `players.test.ts`, `hosts.test.ts`, `edge-cases.test.ts` | join/resume/leave, host commands, kick, moderation, stats, gone connections, defensive paths                                       |
 | `http.test.ts`                                           | Every route: happy path, 400, 401, 404 for foreign owners, 409, rate limits, body limits, media, CORS                              |
@@ -264,6 +305,8 @@ IPs, and a fake clock in the year 2100 (so DynamoDB Local's TTL sweeper never to
 `test/harness.ts` builds a `GameService` and an HTTP app on a `FakeTransport` (records every message and
 validates it against the protocol's `ServerMessage`, and can mark connections gone), a controllable
 clock, deterministic ids, a fake `HostAuth`, an in-memory media fake and a `sleep` that advances the
-clock. Its store is a proxy that counts calls and can replace methods, which the race and crash tests
+clock (and can run a hook first, to act while the service waits). `send` passes the harness's own
+address as `sourceIp` unless told otherwise, so harnesses sharing a DynamoDB table do not share a
+failed-PIN budget. Its store is a proxy that counts calls and can replace methods, which the race and crash tests
 use. The DynamoDB client and table helpers are borrowed from `packages/store/test`, because this
 package may not depend on the AWS SDK.

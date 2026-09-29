@@ -40,6 +40,23 @@ export function tally(players: PlayerRecord[], responses: ResponseRecord[]): Tal
 }
 
 /**
+ * Non-kicked players a live question is still waiting for, plus those who already answered:
+ * everyone connected, and anyone who answered and has since left (ADR-0006). A player who is
+ * offline without an answer is not counted, so they cannot hold the question open.
+ */
+export function expectedAnswerers(
+  players: PlayerRecord[],
+  answeredIds: ReadonlySet<string>,
+  connectedPlayerIds: ReadonlySet<string>,
+): number {
+  let count = 0;
+  for (const p of players) {
+    if (!p.kicked && (answeredIds.has(p.playerId) || connectedPlayerIds.has(p.playerId))) count++;
+  }
+  return count;
+}
+
+/**
  * Scoring questions revealed so far (skipped ones never are). While this is 0 every player is
  * tied on zero, so final ranks and a podium would only reflect nickname order.
  */

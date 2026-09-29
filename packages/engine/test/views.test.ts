@@ -771,6 +771,76 @@ describe('computeLiveStats', () => {
     expect(JSON.stringify(out)).not.toContain('correct');
   });
 
+  describe('expected, with the connected players given (ADR-0006, all-answered)', () => {
+    const meta = openAtIndex(s, Q.single);
+    const withConnected = (connected: string[], responses: ResponseRecord[]) => {
+      const out = computeLiveStats({
+        question: questions()[Q.single]!,
+        responses,
+        players: ps,
+        connectedPlayerIds: new Set(connected),
+      });
+      expect(LiveStats.safeParse(out).success).toBe(true);
+      return { answered: out.answered, totalPlayers: out.totalPlayers, expected: out.expected };
+    };
+    const r = (no: number) => response(meta, pid(no), choice('opt-paris'));
+
+    it('counts the connected players, so answered reaches it when they all have answered', () => {
+      expect(withConnected([pid(1), pid(2), pid(3), pid(4), pid(6)], [])).toEqual({
+        answered: 0,
+        totalPlayers: 5,
+        expected: 5,
+      });
+      // Cara, Dan and Zed dropped out without answering: nobody is left to wait for but two.
+      expect(withConnected([pid(1), pid(2)], [r(1)])).toEqual({
+        answered: 1,
+        totalPlayers: 5,
+        expected: 2,
+      });
+      expect(withConnected([pid(1), pid(2)], [r(1), r(2)])).toEqual({
+        answered: 2,
+        totalPlayers: 5,
+        expected: 2,
+      });
+    });
+
+    it('still counts a player who answered and then disconnected', () => {
+      expect(withConnected([pid(1)], [r(1), r(2)])).toEqual({
+        answered: 2,
+        totalPlayers: 5,
+        expected: 2,
+      });
+      expect(withConnected([pid(1), pid(3)], [r(2)])).toEqual({
+        answered: 1,
+        totalPlayers: 5,
+        expected: 3,
+      });
+    });
+
+    it('never counts a kicked player, connected or not, and ignores ids nobody holds', () => {
+      expect(withConnected([pid(1), pid(5), 'stranger'], [r(5)])).toEqual({
+        answered: 0,
+        totalPlayers: 5,
+        expected: 1,
+      });
+    });
+
+    it('is 0 when nobody is connected and nobody answered', () => {
+      expect(withConnected([], [])).toEqual({ answered: 0, totalPlayers: 5, expected: 0 });
+    });
+
+    it('leaves totalPlayers what a result reports: every non-kicked player', () => {
+      expect(withConnected([pid(1)], [r(1)]).totalPlayers).toBe(5);
+      expect(stats(Q.single, [r(1)])).toMatchObject({ answered: 1, totalPlayers: 5 });
+    });
+
+    it('is left out when the connected players are not given', () => {
+      const out = stats(Q.single, [r(1)]);
+      expect(out).not.toHaveProperty('expected');
+      expect(out).toMatchObject({ answered: 1, totalPlayers: 5 });
+    });
+  });
+
   it('counts true/false, poll and rating', () => {
     const tf = openAtIndex(s, Q.truefalse);
     expect(

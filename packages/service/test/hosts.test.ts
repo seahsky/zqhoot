@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { describeWithStores } from './harness.ts';
+import type { Harness } from './harness.ts';
 import { choice, startGame, text } from './game.ts';
+import type { Game } from './game.ts';
 import { miniQuiz, openQuiz, wordCloudQuiz } from './fixtures.ts';
 
 const HOUR = 3_600_000;
@@ -297,10 +299,93 @@ describeWithStores('hosts: hello, commands, kick, moderate, stats', (make) => {
       ]);
       expect(h.transport.last(g.control, 'stats')).toMatchObject({
         questionIndex: 0,
-        stats: { type: 'single', answered: 1, totalPlayers: 2, counts: { 'opt-paris': 1 } },
+        stats: {
+          type: 'single',
+          answered: 1,
+          totalPlayers: 2,
+          expected: 2,
+          counts: { 'opt-paris': 1 },
+        },
       });
-      expect(h.calls.sort()).toEqual(['getConnection', 'listPlayers', 'listResponses']);
+      expect(h.calls.sort()).toEqual([
+        'getConnection',
+        'listConnections',
+        'listPlayers',
+        'listResponses',
+      ]);
       expect(h.transport.ofType(present, 'stats')).toEqual([]);
+    });
+
+    describe('who the question waits for (ADR-0006: connected, non-kicked players)', () => {
+      const statsOf = async (h: Harness, g: Game) => {
+        await h.send(g.control, { type: 'host.stats', questionIndex: 0 });
+        return h.transport.last(g.control, 'stats').stats;
+      };
+
+      it('does not expect a player who left or dropped without answering', async () => {
+        const h = await make();
+        const g = await startGame(h, { players: ['Ann', 'Bob', 'Cy'] });
+        const { openAt } = await g.open({ phase: 'lobby', questionIndex: -1 });
+        expect(await statsOf(h, g)).toMatchObject({ answered: 0, totalPlayers: 3, expected: 3 });
+
+        await h.send(g.players.Cy!.connectionId, { type: 'leave' });
+        await h.service.onDisconnect(g.players.Bob!.connectionId);
+        // Both are still players of the session, but only Ann is awaited.
+        expect(await statsOf(h, g)).toMatchObject({ answered: 0, totalPlayers: 3, expected: 1 });
+
+        await g.answer('Ann', 0, choice('opt-paris'), openAt + 100);
+        expect(await statsOf(h, g)).toMatchObject({ answered: 1, totalPlayers: 3, expected: 1 });
+      });
+
+      it('still expects a player who answered and then disconnected, as answered', async () => {
+        const h = await make();
+        const g = await startGame(h, { players: ['Ann', 'Bob'] });
+        const { openAt } = await g.open({ phase: 'lobby', questionIndex: -1 });
+        await g.answer('Bob', 0, choice('opt-rome'), openAt + 100);
+        await h.service.onDisconnect(g.players.Bob!.connectionId);
+        // Bob is gone but his answer stands: only Ann is still awaited.
+        expect(await statsOf(h, g)).toMatchObject({ answered: 1, totalPlayers: 2, expected: 2 });
+        await g.answer('Ann', 0, choice('opt-paris'), openAt + 200);
+        expect(await statsOf(h, g)).toMatchObject({ answered: 2, totalPlayers: 2, expected: 2 });
+      });
+
+      it('expects a player again when they reconnect', async () => {
+        const h = await make();
+        const g = await startGame(h, { players: ['Ann', 'Bob'] });
+        await g.open({ phase: 'lobby', questionIndex: -1 });
+        await h.service.onDisconnect(g.players.Bob!.connectionId);
+        expect(await statsOf(h, g)).toMatchObject({ totalPlayers: 2, expected: 1 });
+        const bob = g.players.Bob!;
+        const again = h.cid('bob-again');
+        await h.send(again, {
+          type: 'resume',
+          v: 1,
+          sessionId: bob.sessionId,
+          playerId: bob.playerId,
+          token: bob.token,
+        });
+        expect(await statsOf(h, g)).toMatchObject({ answered: 0, totalPlayers: 2, expected: 2 });
+      });
+
+      it('leaves a kicked player out of both counts, connected or not', async () => {
+        const h = await make();
+        const g = await startGame(h, { players: ['Ann', 'Bob'] });
+        await g.open({ phase: 'lobby', questionIndex: -1 });
+        await h.send(g.control, { type: 'host.kick', playerId: g.players.Bob!.playerId });
+        expect(await statsOf(h, g)).toMatchObject({ answered: 0, totalPlayers: 1, expected: 1 });
+      });
+
+      it('leaves the result of the closed question counting everyone, with no expected count', async () => {
+        const h = await make();
+        const g = await startGame(h, { players: ['Ann', 'Bob'] });
+        const { openAt } = await g.open({ phase: 'lobby', questionIndex: -1 });
+        await g.answer('Ann', 0, choice('opt-paris'), openAt + 100);
+        await h.service.onDisconnect(g.players.Bob!.connectionId);
+        await g.close(0);
+        const { result } = h.transport.last(g.control, 'host.state').snapshot;
+        expect(result).toMatchObject({ answered: 1, totalPlayers: 2 });
+        expect(result).not.toHaveProperty('expected');
+      });
     });
 
     it('passes the paging cursor through for open-ended questions', async () => {

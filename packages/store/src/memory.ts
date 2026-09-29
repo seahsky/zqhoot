@@ -338,8 +338,16 @@ export class MemoryStore implements Store {
 
   // --- Players ---------------------------------------------------------------------
 
-  async addPlayer(player: PlayerRecord, expiresAt: number): Promise<AddPlayerResult> {
+  async addPlayer(
+    player: PlayerRecord,
+    expiresAt: number,
+    maxPlayers?: number,
+  ): Promise<AddPlayerResult> {
     const b = this.#bucket(player.sessionId);
+    // Counted and inserted in one synchronous step, so concurrent joins cannot pass together.
+    if (maxPlayers !== undefined && this.#livePlayers(player.sessionId).length >= maxPlayers) {
+      return 'session-full';
+    }
     if (this.#live(b.nicknames.get(player.nicknameKey))) return 'nickname-taken';
     if (this.#live(b.players.get(player.playerId))) throw new ConflictError('player exists');
     b.nicknames.set(player.nicknameKey, { expiresAt, value: player.playerId });

@@ -117,10 +117,15 @@ export interface Harness {
   cid(name: string): string;
   /** `null` sends the event without a header map at all. */
   connect(name: string, headers?: Record<string, string> | null): Promise<HandlerResult>;
+  /**
+   * `sourceIp` is API Gateway's `requestContext.identity.sourceIp` of the frame: a fixed address
+   * unless given, and no `identity` at all for `null`.
+   */
   send(
     name: string,
     message: ClientMessage | Record<string, unknown> | string,
     epoch?: number,
+    sourceIp?: string | null,
   ): Promise<HandlerResult>;
   disconnect(name: string): Promise<HandlerResult>;
   createSession(quiz?: QuizInput): Promise<{ sessionId: string; pin: string }>;
@@ -188,7 +193,12 @@ export async function createHarness(label: string): Promise<Harness> {
   const event = (
     routeKey: string,
     name: string,
-    extra: { body?: string; epoch?: number; headers?: Record<string, string> | undefined } = {},
+    extra: {
+      body?: string;
+      epoch?: number;
+      headers?: Record<string, string> | undefined;
+      sourceIp?: string | null;
+    } = {},
   ): WebSocketEvent => ({
     ...(extra.headers !== undefined ? { headers: extra.headers } : {}),
     ...(extra.body !== undefined ? { body: extra.body } : {}),
@@ -196,7 +206,9 @@ export async function createHarness(label: string): Promise<Harness> {
       routeKey,
       connectionId: cid(name),
       requestTimeEpoch: extra.epoch ?? clock.now(),
-      identity: { sourceIp: '198.51.100.9' },
+      ...(extra.sourceIp === null
+        ? {}
+        : { identity: { sourceIp: extra.sourceIp ?? '198.51.100.9' } }),
     },
   });
 
@@ -210,11 +222,12 @@ export async function createHarness(label: string): Promise<Harness> {
     cid,
     connect: (name, headers = { Origin: SITE_ORIGIN }) =>
       handler(event('$connect', name, headers === null ? {} : { headers })),
-    send: (name, message, epoch) =>
+    send: (name, message, epoch, sourceIp) =>
       handler(
         event('$default', name, {
           body: typeof message === 'string' ? message : JSON.stringify(message),
           ...(epoch !== undefined ? { epoch } : {}),
+          ...(sourceIp !== undefined ? { sourceIp } : {}),
         }),
       ),
     disconnect: (name) => handler(event('$disconnect', name)),

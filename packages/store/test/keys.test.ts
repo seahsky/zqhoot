@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { RESPONSE_SHARDS, responseShard } from '../src/index.ts';
 import {
+  PLAYER_SK_PREFIX,
   fnv1a32,
   parseResponseId,
+  playerCountKey,
   responseKey,
   responsePlayerPrefix,
   responseSk,
@@ -70,6 +72,11 @@ describe('key builders', () => {
       pk: `RESP#sess#3#${responseShard('player-a')}`,
       sk: 'P#player-a#01',
     });
+  });
+
+  it('keeps the seat counter out of the range player queries read', () => {
+    expect(playerCountKey('s')).toEqual({ pk: 'SESS#s', sk: 'PCOUNT' });
+    expect(playerCountKey('s').sk.startsWith(PLAYER_SK_PREFIX)).toBe(false);
   });
 
   it('pads createdAt to 13 digits', () => {

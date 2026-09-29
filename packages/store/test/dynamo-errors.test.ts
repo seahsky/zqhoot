@@ -102,6 +102,118 @@ describe('DynamoStore transactions', () => {
   });
 });
 
+describe('DynamoStore player cap', () => {
+  const kind = (command: unknown) => (command as object).constructor.name;
+
+  it('refuses without a transaction when the counter says the session is full', async () => {
+    const { store, sent } = scriptedStore(() => {
+      throw conditionFailed();
+    });
+    expect(await store.addPlayer(makePlayer('s'), 1000, 2)).toBe('session-full');
+    expect(sent.map(kind)).toEqual(['UpdateCommand']);
+  });
+
+  it('takes the seat first, and gives it back when the nickname is taken', async () => {
+    const { store, sent } = scriptedStore((command) => {
+      if (command instanceof TransactWriteCommand) throw canceled('None', 'ConditionalCheckFailed');
+      return {};
+    });
+    expect(await store.addPlayer(makePlayer('s'), 1000, 2)).toBe('nickname-taken');
+    expect(sent.map(kind)).toEqual(['UpdateCommand', 'TransactWriteCommand', 'UpdateCommand']);
+  });
+
+  it('gives the seat back when the transaction is cancelled, and rethrows that error', async () => {
+    const error = canceled('ValidationError', 'None');
+    const { store, sent } = scriptedStore((command) => {
+      if (command instanceof TransactWriteCommand) throw error;
+      return {};
+    });
+    await expect(store.addPlayer(makePlayer('s'), 1000, 2)).rejects.toBe(error);
+    expect(sent.map(kind)).toEqual(['UpdateCommand', 'TransactWriteCommand', 'UpdateCommand']);
+  });
+
+  // The request was refused before DynamoDB ran it, so nothing was written.
+  it.each([
+    'ThrottlingException',
+    'ProvisionedThroughputExceededException',
+    'RequestLimitExceeded',
+    'ValidationException',
+  ])('gives the seat back when the insert is refused with %s, and rethrows it', async (name) => {
+    const error = named(name);
+    const { store, sent } = scriptedStore((command) => {
+      if (command instanceof TransactWriteCommand) throw error;
+      return {};
+    });
+    await expect(store.addPlayer(makePlayer('s'), 1000, 2)).rejects.toBe(error);
+    expect(sent.map(kind)).toEqual(['UpdateCommand', 'TransactWriteCommand', 'UpdateCommand']);
+  });
+
+  // The transaction may have committed before the reply was lost.
+  it.each([
+    named('TimeoutError'),
+    named('InternalServerError'),
+    named('ServiceUnavailable'),
+    Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' }),
+  ])(
+    'keeps the seat when the insert fails with $name, which does not prove nothing was written',
+    async (error) => {
+      const { store, sent } = scriptedStore((command) => {
+        if (command instanceof TransactWriteCommand) throw error;
+        return {};
+      });
+      await expect(store.addPlayer(makePlayer('s'), 1000, 2)).rejects.toBe(error);
+      expect(sent.map(kind)).toEqual(['UpdateCommand', 'TransactWriteCommand']);
+    },
+  );
+
+  it('keeps the outcome of the join when giving the seat back fails too', async () => {
+    let updates = 0;
+    const { store } = scriptedStore((command) => {
+      if (command instanceof TransactWriteCommand) throw canceled('ConditionalCheckFailed', 'None');
+      if (++updates === 2) throw named('ProvisionedThroughputExceededException');
+      return {};
+    });
+    await expect(store.addPlayer(makePlayer('s'), 1000, 2)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('does not treat a give-back that finds nothing to give back as an error', async () => {
+    let updates = 0;
+    const { store } = scriptedStore((command) => {
+      if (command instanceof TransactWriteCommand) throw canceled('None', 'ConditionalCheckFailed');
+      if (++updates === 2) throw conditionFailed();
+      return {};
+    });
+    expect(await store.addPlayer(makePlayer('s'), 1000, 2)).toBe('nickname-taken');
+  });
+
+  it('throws what the seat update throws, other than a failed condition', async () => {
+    const error = named('ThrottlingException');
+    const { store, sent } = scriptedStore(() => {
+      throw error;
+    });
+    await expect(store.addPlayer(makePlayer('s'), 1000, 2)).rejects.toBe(error);
+    expect(sent).toHaveLength(1);
+  });
+
+  it('keeps the seat of a player who was admitted, and never retries the seat update', async () => {
+    const { store, sent } = scriptedStore(() => ({}));
+    expect(await store.addPlayer(makePlayer('s'), 1000, 2)).toBe('ok');
+    expect(sent.map(kind)).toEqual(['UpdateCommand', 'TransactWriteCommand']);
+  });
+
+  it('conditions the seat on the cap and the give-back on a seat to give', async () => {
+    const { store, sent } = scriptedStore((command) => {
+      if (command instanceof TransactWriteCommand) throw canceled('None', 'ConditionalCheckFailed');
+      return {};
+    });
+    await store.addPlayer(makePlayer('s'), 1000, 7);
+    const [take, , giveBack] = sent as Array<{ input: Record<string, any> }>;
+    expect(take?.input.ConditionExpression).toBe('attribute_not_exists(#seats) OR #seats < :max');
+    expect(take?.input.ExpressionAttributeValues[':max']).toBe(7);
+    expect(giveBack?.input.ConditionExpression).toBe('attribute_exists(#seats) AND #seats > :none');
+  });
+});
+
 describe('DynamoStore putConnection', () => {
   const items = (command: unknown) =>
     (command as TransactWriteCommand).input.TransactItems as Array<{

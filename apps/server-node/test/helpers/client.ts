@@ -31,8 +31,14 @@ export class TestSocket {
     });
   }
 
-  static async connect(url: string, origin: string | null): Promise<TestSocket> {
-    const ws = new WebSocket(url, origin === null ? {} : { origin });
+  static async connect(
+    url: string,
+    origin: string | null,
+    headers: Record<string, string> = {},
+  ): Promise<TestSocket> {
+    const ws = new WebSocket(url, {
+      headers: { ...headers, ...(origin === null ? {} : { origin }) },
+    });
     await new Promise<void>((resolve, reject) => {
       ws.once('open', resolve);
       ws.once('error', reject);
@@ -43,8 +49,11 @@ export class TestSocket {
     return new TestSocket(ws);
   }
 
-  static async connectTo(server: TestServer): Promise<TestSocket> {
-    return TestSocket.connect(server.ws, server.origin);
+  static async connectTo(
+    server: TestServer,
+    headers: Record<string, string> = {},
+  ): Promise<TestSocket> {
+    return TestSocket.connect(server.ws, server.origin, headers);
   }
 
   send(message: ClientMessage | Record<string, unknown>): void {

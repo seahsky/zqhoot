@@ -360,6 +360,18 @@ const serverCases: Record<ServerMessageType, Cases> = {
       {
         type: 'stats',
         ts,
+        questionIndex: 0,
+        stats: {
+          type: 'single',
+          answered: 1,
+          totalPlayers: 4,
+          expected: 2,
+          counts: { [OPT_A]: 1 },
+        },
+      },
+      {
+        type: 'stats',
+        ts,
         questionIndex: 4,
         stats: { type: 'open', answered: 0, totalPlayers: 2, responses: [], cursor: null },
       },
@@ -392,6 +404,24 @@ const serverCases: Record<ServerMessageType, Cases> = {
           ts,
           questionIndex: 0,
           stats: { type: 'single', answered: 1, totalPlayers: 2, words: [] },
+        },
+      ],
+      [
+        'negative expected count',
+        {
+          type: 'stats',
+          ts,
+          questionIndex: 0,
+          stats: { type: 'single', answered: 1, totalPlayers: 2, expected: -1, counts: {} },
+        },
+      ],
+      [
+        'fractional expected count',
+        {
+          type: 'stats',
+          ts,
+          questionIndex: 0,
+          stats: { type: 'single', answered: 1, totalPlayers: 2, expected: 1.5, counts: {} },
         },
       ],
       [

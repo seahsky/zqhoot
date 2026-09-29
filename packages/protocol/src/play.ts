@@ -133,27 +133,47 @@ export const QuestionResult = z.discriminatedUnion('type', [
 ]);
 export type QuestionResult = z.infer<typeof QuestionResult>;
 
+/**
+ * The counts at the head of a live view: those of a result, and `expected`.
+ *
+ * Unlike a result's, `totalPlayers` here is read while the question is open and counts every
+ * non-kicked player, connected or not, so the "X of Y answered" a host shows keeps one
+ * denominator from the open question to its result.
+ */
+const liveCounts = {
+  ...resultCounts,
+  /**
+   * The non-kicked players the open question still waits for, plus those who have already
+   * answered: everyone connected, and anyone who answered and has since left. A player who is
+   * offline without an answer is not counted, so a phone that dropped out cannot hold the
+   * question open. Hosts close early with `reason: 'all-answered'` once `answered >= expected`
+   * (ADR-0006: "every connected, non-kicked player has answered"). Absent when the server does
+   * not report it; a host then falls back to `totalPlayers`.
+   */
+  expected: z.number().int().min(0).optional(),
+};
+
 /** Live view for hosts while a question is open. Same shape as a result, no correct answer. */
 export const LiveStats = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('single'),
-    ...resultCounts,
+    ...liveCounts,
     counts: z.record(z.string(), z.number().int()),
   }),
   z.object({
     type: z.literal('truefalse'),
-    ...resultCounts,
+    ...liveCounts,
     counts: z.object({ true: z.number().int(), false: z.number().int() }),
   }),
   z.object({
     type: z.literal('poll'),
-    ...resultCounts,
+    ...liveCounts,
     counts: z.record(z.string(), z.number().int()),
   }),
-  z.object({ type: z.literal('wordcloud'), ...resultCounts, words: z.array(WordCount) }),
+  z.object({ type: z.literal('wordcloud'), ...liveCounts, words: z.array(WordCount) }),
   z.object({
     type: z.literal('open'),
-    ...resultCounts,
+    ...liveCounts,
     /** Responses received after the request's cursor, oldest first, at most one page. */
     responses: z.array(OpenResponseView),
     /** Pass back as `after` to fetch the next page. */
@@ -161,7 +181,7 @@ export const LiveStats = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('rating'),
-    ...resultCounts,
+    ...liveCounts,
     histogram: z.array(z.number().int()),
     average: z.number().nullable(),
   }),

@@ -3,6 +3,7 @@ import type {
   AnswerMsg,
   AnswerRejectReason,
   ErrorCode,
+  HostCloseMsg,
   HostCommand,
   HostHelloMsg,
   HostKickMsg,
@@ -49,6 +50,7 @@ import { exceedsUtf8Bytes, sha256Hex, timingSafeEqualHex } from './crypto.ts';
 import { Delivery, describeError } from './delivery.ts';
 import type { Audience } from './delivery.ts';
 import { LruCache } from './lru.ts';
+import { PIN_LOOKUP_LIMIT, PIN_LOOKUP_WINDOW_MS, UNKNOWN_IP, pinLookupCounter } from './limits.ts';
 import { CLOSE_CODES, noopLogger } from './ports.ts';
 import type { Clock, HostAuth, Ids, Logger, Scheduler, Sleep, Transport } from './ports.ts';
 
@@ -194,7 +196,7 @@ export class GameService {
   ): Promise<void> {
     const frame: { type?: string } = {};
     try {
-      await this.#handleFrame(connectionId, raw, receivedAt, frame);
+      await this.#handleFrame(connectionId, raw, receivedAt, frame, info?.sourceIp);
     } catch (err) {
       this.#log.error(
         { connectionId, type: frame.type, sourceIp: info?.sourceIp, err: describeError(err) },
@@ -239,6 +241,7 @@ export class GameService {
     raw: string,
     receivedAt: number,
     frame: { type?: string },
+    sourceIp: string | undefined,
   ): Promise<void> {
     if (exceedsUtf8Bytes(raw, LIMITS.clientMessageMaxBytes)) {
       await this.#out.error(connectionId, 'bad-request', 'message too large');
@@ -291,7 +294,7 @@ export class GameService {
         await this.#out.send(connectionId, { type: 'pong', t: msg.t });
         return;
       case 'join':
-        await this.#join(connectionId, msg);
+        await this.#join(connectionId, msg, sourceIp ?? UNKNOWN_IP);
         return;
       case 'resume':
         await this.#resume(connectionId, msg);
@@ -337,6 +340,14 @@ export class GameService {
       case 'host.stats':
         return this.#stats(connectionId, binding, msg);
       default:
+        // A timer close that comes early must not cut the answer grace short (ADR-0005).
+        if (
+          msg.type === 'host.close' &&
+          msg.reason === 'timer' &&
+          !(await this.#awaitGraceEnd(binding.sessionId, msg))
+        ) {
+          return;
+        }
         return this.#transition(
           binding.sessionId,
           (meta, snapshot, now) => applyHostCommand(meta, snapshot, msg, now, this.#cfg.engine),
@@ -345,11 +356,37 @@ export class GameService {
     }
   }
 
+  /**
+   * Holds a `host.close {reason:'timer'}` back until `deadline + answerGraceMs`, the last instant
+   * an answer is accepted. Clients close at that time by their own clock, which can run a little
+   * fast, and an answer that arrives after the close commits is refused whatever its `receivedAt`.
+   * Returns false when the close was left to the scheduler and the caller has nothing to do.
+   */
+  async #awaitGraceEnd(sessionId: string, msg: HostCloseMsg): Promise<boolean> {
+    const meta = await this.#store.getSession(sessionId);
+    if (
+      meta === null ||
+      meta.phase !== 'question' ||
+      meta.questionIndex !== msg.questionIndex ||
+      meta.deadline === null
+    ) {
+      return true;
+    }
+    const grace = this.#cfg.engine.answerGraceMs;
+    const wait = meta.deadline + grace - this.#clock.now();
+    if (wait <= 0) return true;
+    // The VM armed its own close for that instant when the question opened; a second one would
+    // only hold this frame's connection for nothing.
+    if (this.#scheduler !== undefined) return false;
+    await this.#sleep(Math.min(wait, grace));
+    return true;
+  }
+
   // ---------------------------------------------------------------------------
   // Player: join, resume, answer, leave
   // ---------------------------------------------------------------------------
 
-  async #join(connectionId: string, msg: JoinMsg): Promise<void> {
+  async #join(connectionId: string, msg: JoinMsg, ip: string): Promise<void> {
     const store = this.#store;
     const now = this.#clock.now();
 
@@ -365,12 +402,28 @@ export class GameService {
       return;
     }
 
+    // Same budget and same order as `GET /api/join/:pin`: a blocked IP is refused before the PIN
+    // is looked up, so a live PIN and a dead one look alike, and only a miss spends the budget
+    // (a classroom behind one NAT joins with valid PINs all day).
+    const counter = pinLookupCounter(ip);
+    if (!(await store.peekRateLimit(counter, PIN_LOOKUP_LIMIT, PIN_LOOKUP_WINDOW_MS, now))) {
+      await this.#refuseForPinGuessing(connectionId);
+      return;
+    }
+
     const sessionId = await store.getSessionIdByPin(msg.pin);
     const meta = sessionId === null ? null : await store.getSession(sessionId);
     const count = sessionId === null || meta === null ? 0 : await store.countPlayers(sessionId);
     const check = checkJoinable(meta, count, now);
     if (!check.ok || sessionId === null || meta === null) {
       const code = check.ok ? 'not-found' : check.code;
+      if (
+        code === 'not-found' &&
+        !(await store.hitRateLimit(counter, PIN_LOOKUP_LIMIT, PIN_LOOKUP_WINDOW_MS, now))
+      ) {
+        await this.#refuseForPinGuessing(connectionId);
+        return;
+      }
       await this.#out.error(connectionId, code, JOIN_REFUSALS[code], 'join');
       return;
     }
@@ -393,7 +446,14 @@ export class GameService {
       kicked: false,
       lastSeenAt: now,
     };
-    if ((await store.addPlayer(player, meta.expiresAt)) === 'nickname-taken') {
+    // The count read above only turns a full session away early: the cap itself is enforced by
+    // the store, atomically, because any number of joins can pass that read together.
+    const admission = await store.addPlayer(player, meta.expiresAt, meta.maxPlayers);
+    if (admission === 'session-full') {
+      await this.#out.error(connectionId, 'session-full', JOIN_REFUSALS['session-full'], 'join');
+      return;
+    }
+    if (admission === 'nickname-taken') {
       await this.#out.error(
         connectionId,
         'nickname-taken',
@@ -434,6 +494,15 @@ export class GameService {
       [binding],
     );
     if (delivered) await this.#out.announceConnected(player);
+  }
+
+  #refuseForPinGuessing(connectionId: string): Promise<boolean> {
+    return this.#out.error(
+      connectionId,
+      'rate-limited',
+      'too many wrong PINs from this network, try again in a minute',
+      'join',
+    );
   }
 
   async #resume(connectionId: string, msg: ResumeMsg): Promise<void> {
@@ -741,9 +810,16 @@ export class GameService {
         if (this.#cfg.revealSettleMs > 0) await this.#sleep(this.#cfg.revealSettleMs);
         await this.#reveal(sessionId, effect.questionIndex);
         return;
-      case 'retry-reveal':
+      case 'retry-reveal': {
+        // The settle is measured from the close: an answer acknowledged as accepted may still be
+        // on its way to the store, and a second Next pressed inside the interval must not reveal
+        // without it. The cap keeps a close stamped by a clock that runs ahead from stalling us.
+        const settle = this.#cfg.revealSettleMs;
+        const wait = (meta.closedAt ?? 0) + settle - this.#clock.now();
+        if (wait > 0) await this.#sleep(Math.min(wait, settle));
         await this.#reveal(sessionId, effect.questionIndex);
         return;
+      }
       case 'leaderboard': {
         const [aud, players, scoreboard] = await Promise.all([
           this.#out.audience(sessionId),
@@ -1015,14 +1091,16 @@ export class GameService {
       await this.#out.error(connectionId, 'bad-request', 'no such question', msg.type, [binding]);
       return;
     }
-    const [responses, players] = await Promise.all([
+    const [responses, players, aud] = await Promise.all([
       this.#store.listResponses(sessionId, msg.questionIndex),
       this.#store.listPlayers(sessionId),
+      this.#out.audience(sessionId),
     ]);
     const stats = computeLiveStats({
       question,
       responses,
       players,
+      connectedPlayerIds: new Set(aud.players.keys()),
       ...(msg.after !== undefined ? { after: msg.after } : {}),
     });
     await this.#out.send(connectionId, { type: 'stats', questionIndex: msg.questionIndex, stats }, [

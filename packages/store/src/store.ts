@@ -28,7 +28,7 @@ export class ConflictError extends Error {
 
 export type PutResponseResult = { created: true } | { created: false; existing: ResponseRecord };
 
-export type AddPlayerResult = 'ok' | 'nickname-taken';
+export type AddPlayerResult = 'ok' | 'nickname-taken' | 'session-full';
 
 export interface Store {
   // --- Quizzes (durable, no expiry) -------------------------------------------------
@@ -61,8 +61,19 @@ export interface Store {
   /**
    * Atomically inserts the player and reserves `player.nicknameKey` within the session.
    * A taken nickname gives `'nickname-taken'`; an existing `playerId` throws ConflictError.
+   *
+   * With `maxPlayers` the admission itself is conditional: however many calls run at once, at
+   * most `maxPlayers` of them get `'ok'` and the rest `'session-full'`, which is decided before
+   * the nickname is looked at. A seat is held while its join is in flight and given back when it
+   * is refused, or fails in a way that proves nothing was written (throttled, invalid). An error
+   * that does not, such as a timeout or a 5xx, keeps it. So a refusal that overlaps other joins
+   * near the cap may say `'session-full'` where it would otherwise say `'nickname-taken'`. Kicked players occupy a seat like any other. A session
+   * must be filled with `maxPlayers` on every call or on none: an uncapped insert is not counted
+   * toward the cap of later capped ones in `DynamoStore`. Players of one session are expected to
+   * share one expiry (the session's); the cap counts seats, so an earlier-expiring player would
+   * keep its seat there.
    */
-  addPlayer(player: PlayerRecord, expiresAt: number): Promise<AddPlayerResult>;
+  addPlayer(player: PlayerRecord, expiresAt: number, maxPlayers?: number): Promise<AddPlayerResult>;
   getPlayer(sessionId: string, playerId: string): Promise<PlayerRecord | null>;
   /** Throws NotFoundError if the player does not exist. */
   updatePlayer(

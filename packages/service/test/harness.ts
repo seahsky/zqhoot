@@ -336,10 +336,16 @@ export interface Harness {
       raw?: RawBody;
     },
   ): Promise<ApiResult>;
+  /**
+   * `sourceIp` is what the adapter would pass: this harness's own address unless given, and none
+   * at all for `null`. Harnesses share one DynamoDB table and one fake clock, so a shared address
+   * would also share the failed-PIN budget.
+   */
   send(
     connectionId: string,
     message: ClientMessage | Record<string, unknown>,
     receivedAt?: number,
+    sourceIp?: string | null,
   ): Promise<void>;
   createQuiz(input: QuizInput, who?: HostKey): Promise<Quiz>;
   startSession(quizId: string, who?: HostKey): Promise<{ sessionId: string; pin: string }>;
@@ -494,8 +500,13 @@ export async function createHarness(
         json: <T = any>() => JSON.parse(text) as T,
       };
     },
-    async send(connectionId, message, receivedAt) {
-      await service.onMessage(connectionId, JSON.stringify(message), receivedAt ?? clock.now());
+    async send(connectionId, message, receivedAt, sourceIp) {
+      await service.onMessage(
+        connectionId,
+        JSON.stringify(message),
+        receivedAt ?? clock.now(),
+        sourceIp === null ? undefined : { sourceIp: sourceIp ?? ip },
+      );
     },
     async createQuiz(input, who = 'a') {
       const res = await h.api('POST', '/api/quizzes', { token: HOST_TOKENS[who], body: input });

@@ -35,6 +35,7 @@ projection ALL, TTL on `expiresAt`).
 | PIN claim               | `PIN#{pin}`                   | `PIN`                           | `sessionId`                                                                           | `expiresAt` argument         |
 | Player                  | `SESS#{sid}`                  | `PLAYER#{playerId}`             |                                                                                       | `expiresAt` argument         |
 | Nickname claim          | `SESS#{sid}`                  | `NICK#{nicknameKey}`            | `playerId`                                                                            | `expiresAt` argument         |
+| Player seats            | `SESS#{sid}`                  | `PCOUNT`                        | `seats`, only for sessions filled with `maxPlayers`                                   | `expiresAt` argument         |
 | Connection (by id)      | `CONN#{connId}`               | `CONN`                          | `expiresAtMs`                                                                         | `conn.expiresAt`             |
 | Connection (by session) | `SESS#{sid}`                  | `CONN#{connId}`                 | `expiresAtMs`                                                                         | `conn.expiresAt`             |
 | Response                | `RESP#{sid}#{qIndex}#{shard}` | `P#{playerId}#{slot, 2 digits}` | shard = FNV-1a 32 over UTF-16 code units of `playerId`, mod 4                         | `expiresAt` argument         |
@@ -64,6 +65,25 @@ Operations, as implemented:
   condition. A failed nickname claim gives `'nickname-taken'`; a failed player put (same
   `playerId` again) throws `ConflictError`. `updatePlayer` is guarded by
   `attribute_exists(pk) AND expiresAt > :nowSec`.
+- `addPlayer` with `maxPlayers` (the service always passes the session's): first one `UpdateItem`
+  on the session's `PCOUNT` item, `seats = seats + 1` under the condition
+  `attribute_not_exists(seats) OR seats < :max`. A failed condition is `'session-full'`, before the
+  nickname is looked at, so however many joins run at once exactly `maxPlayers` get a seat. Then
+  the transaction above. A definite failure gives the seat back (`seats - 1`, only while
+  `seats > 0`, best effort): `'nickname-taken'`, a `ConflictError`, any cancelled transaction, or a
+  request DynamoDB refused before running it (`ThrottlingException`,
+  `ProvisionedThroughputExceededException`, `RequestLimitExceeded`, `ValidationException`). An
+  error that does not prove the insert failed (a timeout, a network error, a 5xx) keeps the seat,
+  since the transaction may have committed and a seat given back then would admit one player too
+  many later; a leaked seat is the safer failure. The seat is a separate write on purpose: inside
+  the transaction every join of a session would conflict with every other on the one counter and be
+  cancelled and retried, which a class joining at once cannot afford, while conditional updates of
+  one item are serialised by DynamoDB without cancelling anyone. The cost is that an invocation
+  that dies between the two writes keeps its seat taken for the rest of the session. `seats` counts
+  admissions, not live players: kicked players keep theirs, which matches `countPlayers`, and
+  players of one session are assumed to share the session's expiry. An insert without
+  `maxPlayers` neither reads nor writes `PCOUNT`, so a session is filled with the cap on every call
+  or on none. `MemoryStore` counts its live players and inserts in one synchronous step.
 - `putConnection` / `deleteConnection`: a transaction each, so the by-id and by-session items
   never disagree. `deleteConnection` reads the by-id item first to find the session.
   `putConnection` reads it too: when the connection was registered under another session, the

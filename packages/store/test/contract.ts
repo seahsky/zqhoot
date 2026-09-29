@@ -614,6 +614,96 @@ export function runStoreContract(
         expect(await store.addPlayer(again, expiresAt + HOUR_MS)).toBe('ok');
         expect(await store.getPlayer(sid, player.playerId)).toEqual(again);
       });
+      describe('the player cap (maxPlayers)', () => {
+        it('admits exactly maxPlayers of a burst of concurrent joins, and refuses the rest as full', async () => {
+          const sid = uid('sess');
+          const players = Array.from({ length: 24 }, () => makePlayer(sid));
+          const results = await Promise.all(players.map((p) => store.addPlayer(p, expires(), 9)));
+          expect(countOf(results, 'ok')).toBe(9);
+          expect(countOf(results, 'session-full')).toBe(15);
+          expect(await store.countPlayers(sid)).toBe(9);
+          const admitted = players.filter((_, i) => results[i] === 'ok').map((p) => p.playerId);
+          expect((await store.listPlayers(sid)).map((p) => p.playerId)).toEqual(admitted.sort());
+        });
+
+        it('keeps the cap across bursts, and one session never uses another one’s seats', async () => {
+          const [first, second] = [uid('sess'), uid('sess')];
+          for (let wave = 0; wave < 3; wave++) {
+            await Promise.all(
+              Array.from({ length: 4 }, () => store.addPlayer(makePlayer(first), expires(), 6)),
+            );
+          }
+          expect(await store.countPlayers(first)).toBe(6);
+          expect(await store.addPlayer(makePlayer(first), expires(), 6)).toBe('session-full');
+          expect(await store.addPlayer(makePlayer(second), expires(), 6)).toBe('ok');
+          expect(await store.countPlayers(second)).toBe(1);
+        });
+
+        it('says session-full before it looks at the nickname', async () => {
+          const sid = uid('sess');
+          const first = makePlayer(sid);
+          expect(await store.addPlayer(first, expires(), 1)).toBe('ok');
+          const same = makePlayer(sid, { nicknameKey: first.nicknameKey });
+          expect(await store.addPlayer(same, expires(), 1)).toBe('session-full');
+          expect(await store.addPlayer(makePlayer(sid), expires(), 1)).toBe('session-full');
+        });
+
+        it('does not use up a seat on a taken nickname or a duplicate player id', async () => {
+          const sid = uid('sess');
+          const first = makePlayer(sid);
+          expect(await store.addPlayer(first, expires(), 3)).toBe('ok');
+          for (let i = 0; i < 4; i++) {
+            const same = makePlayer(sid, { nicknameKey: first.nicknameKey });
+            expect(await store.addPlayer(same, expires(), 3)).toBe('nickname-taken');
+          }
+          for (let i = 0; i < 4; i++) {
+            const clash = makePlayer(sid, { playerId: first.playerId });
+            await rejectsConflict(store.addPlayer(clash, expires(), 3));
+          }
+          expect(await store.addPlayer(makePlayer(sid), expires(), 3)).toBe('ok');
+          expect(await store.addPlayer(makePlayer(sid), expires(), 3)).toBe('ok');
+          expect(await store.addPlayer(makePlayer(sid), expires(), 3)).toBe('session-full');
+          expect(await store.countPlayers(sid)).toBe(3);
+        });
+
+        it('lets a burst of the same nickname take one seat and no more', async () => {
+          const sid = uid('sess');
+          const nicknameKey = uid('nick');
+          const results = await Promise.all(
+            Array.from({ length: 8 }, () =>
+              store.addPlayer(makePlayer(sid, { nicknameKey }), expires(), 5),
+            ),
+          );
+          expect(countOf(results, 'ok')).toBe(1);
+          // A seat is held while its join is in flight, so near the cap an overlapping refusal
+          // may read 'session-full' instead of 'nickname-taken'; either way nothing else got in.
+          expect(countOf(results, 'nickname-taken') + countOf(results, 'session-full')).toBe(7);
+          expect(await store.countPlayers(sid)).toBe(1);
+          // Every refusal gave its seat back: four other players still fit.
+          for (let i = 0; i < 4; i++) {
+            expect(await store.addPlayer(makePlayer(sid), expires(), 5)).toBe('ok');
+          }
+          expect(await store.addPlayer(makePlayer(sid), expires(), 5)).toBe('session-full');
+        });
+
+        it('counts kicked players like any other', async () => {
+          const sid = uid('sess');
+          const first = makePlayer(sid);
+          await store.addPlayer(first, expires(), 1);
+          await store.updatePlayer(sid, first.playerId, { kicked: true });
+          expect(await store.addPlayer(makePlayer(sid), expires(), 1)).toBe('session-full');
+        });
+
+        it('admits nobody into a session of zero seats, and everybody when no cap is given', async () => {
+          const sid = uid('sess');
+          expect(await store.addPlayer(makePlayer(sid), expires(), 0)).toBe('session-full');
+          expect(await store.countPlayers(sid)).toBe(0);
+          for (let i = 0; i < 5; i++) {
+            expect(await store.addPlayer(makePlayer(sid), expires())).toBe('ok');
+          }
+          expect(await store.countPlayers(sid)).toBe(5);
+        });
+      });
     });
 
     describe('connections', () => {

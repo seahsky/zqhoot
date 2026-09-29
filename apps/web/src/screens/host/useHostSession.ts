@@ -152,6 +152,7 @@ export function useHostSession(o: {
       questionIndex: liveIndex,
       answered: stats.answered,
       totalPlayers: stats.totalPlayers,
+      ...(stats.expected !== undefined ? { expected: stats.expected } : {}),
       cursor: stats.type === 'open' ? stats.cursor : null,
     });
   }, [drive, stats, liveIndex, run]);

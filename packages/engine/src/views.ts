@@ -18,6 +18,7 @@ import {
   allOpenViews,
   booleanCounts,
   compareByArrival,
+  expectedAnswerers,
   optionCounts,
   ratingStats,
   revealedScoredCount,
@@ -384,16 +385,28 @@ function pageOpenResponses(
  * and de-duplicates by response id. Pages walk every response, not just the capped set a reveal
  * carries: each message is bounded by the page size, and a capped list would make the older
  * ones unreachable to a poller.
+ *
+ * `totalPlayers` is every non-kicked player, as in a result. With `connectedPlayerIds` the head
+ * also carries `expected`, the players the question is waiting for (see `expectedAnswerers`), so
+ * `answered >= expected` is exactly "every connected, non-kicked player has answered", the
+ * condition hosts close early on (ADR-0006).
  */
 export function computeLiveStats(i: {
   question: Question;
   responses: ResponseRecord[];
   players: PlayerRecord[];
+  connectedPlayerIds?: ReadonlySet<string>;
   after?: string;
 }): LiveStats {
   const q = i.question;
   const t = tally(i.players, i.responses);
-  const head = { answered: t.answered, totalPlayers: t.totalPlayers };
+  const head = {
+    answered: t.answered,
+    totalPlayers: t.totalPlayers,
+    ...(i.connectedPlayerIds !== undefined
+      ? { expected: expectedAnswerers(i.players, t.answeredIds, i.connectedPlayerIds) }
+      : {}),
+  };
   switch (q.type) {
     case 'single':
       return { type: 'single', ...head, counts: optionCounts(q, t) };

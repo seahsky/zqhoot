@@ -42,6 +42,15 @@ export interface PlayerProfile {
   streak: number;
 }
 
+/** A player's score figures as of session version `sv`. */
+export interface Standing {
+  sv: number;
+  score: number;
+  rank: number | null;
+  /** Null when the message that set the score did not carry a streak (leaderboard, ended). */
+  streak: number | null;
+}
+
 export interface QuestionInfo {
   /** Zero-based. */
   index: number;
@@ -145,6 +154,13 @@ export interface PlayerState {
   quizTitle: string;
   totalQuestions: number;
   me: PlayerProfile | null;
+  /**
+   * The newest score, rank and streak a snapshot or broadcast carried, and its session version;
+   * null before the first one. It is kept even while `me` is unset, because a reveal that
+   * overtakes the first welcome has nowhere else to put its figures. A welcome that lost a race
+   * can still fill `me` in, but only with figures at least this new.
+   */
+  standing: Standing | null;
   view: PlayerView;
   /** Bookkeeping the view is derived from. Read `view`, not this. */
   stage: Stage;
@@ -209,6 +225,7 @@ export function initialPlayerState(connection: ConnectionStatus = 'idle'): Playe
     quizTitle: '',
     totalQuestions: 0,
     me: null,
+    standing: null,
     stage: { kind: 'connecting' },
   });
 }
@@ -424,8 +441,9 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
       // The first snapshot of a connection wins over what the old socket left us, even with a
       // lower `sv`: a restarted server may have rolled back by up to a second. Once this
       // socket has delivered anything, a snapshot older than that lost the race to a
-      // broadcast (a resume answered after the question opened) and is dropped.
-      if (!state.fresh && msg.snapshot.sv < state.sv) return state;
+      // broadcast (a resume answered after the question opened): what it says about the game
+      // is dropped, what it says about the player and the quiz is not.
+      if (!state.fresh && msg.snapshot.sv < state.sv) return keepIdentity(state, msg.snapshot);
       return applySnapshot(state, msg.snapshot);
 
     case 'question': {
@@ -464,6 +482,12 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
           rank: msg.you.rank,
           streak: msg.you.streak,
         },
+        standing: {
+          sv: msg.sv,
+          score: msg.you.score,
+          rank: msg.you.rank,
+          streak: msg.you.streak,
+        },
         stage: {
           kind: 'reveal',
           index: msg.index,
@@ -481,6 +505,7 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
         sv: msg.sv,
         fresh: false,
         me: state.me && { ...state.me, score: msg.you.score, rank: msg.you.rank },
+        standing: standingAfter(state, msg.sv, msg.you),
         stage: { kind: 'leaderboard', index: msg.index, standing: msg.you },
       });
     }
@@ -492,6 +517,7 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
         sv: msg.sv,
         fresh: false,
         me: state.me && { ...state.me, score: msg.you.score, rank: msg.you.rank },
+        standing: standingAfter(state, msg.sv, msg.you),
         stage: {
           kind: 'ended',
           podium: msg.podium,
@@ -568,7 +594,39 @@ function applySnapshot(state: PlayerState, snap: PlayerSnapshot): PlayerState {
     quizTitle: snap.quizTitle,
     totalQuestions: snap.totalQuestions,
     me,
+    standing: { sv: snap.sv, score: me.score, rank: me.rank, streak: me.streak },
     stage,
+  });
+}
+
+/** Score and rank from a message without a streak: the streak stays what it was. */
+function standingAfter(
+  state: PlayerState,
+  sv: number,
+  you: { score: number; rank: number | null },
+): Standing {
+  return { sv, score: you.score, rank: you.rank, streak: state.standing?.streak ?? null };
+}
+
+/**
+ * The parts of a welcome that do not go stale. `me` and `quizTitle` are only ever set from a
+ * welcome (later messages patch an existing `me`), so dropping a welcome whole would leave the
+ * header without a nickname and the lobby without a title until the next reconnect. The score,
+ * rank and streak are kept when a broadcast newer than the welcome already set them.
+ */
+function keepIdentity(state: PlayerState, snap: PlayerSnapshot): PlayerState {
+  const held = state.standing;
+  // Figures a broadcast newer than the welcome set win, whether or not `me` existed to take them.
+  const newer = held !== null && snap.sv < held.sv;
+  const me: PlayerProfile = newer
+    ? { ...snap.you, score: held.score, rank: held.rank, streak: held.streak ?? snap.you.streak }
+    : { ...snap.you };
+  return withView({
+    ...state,
+    quizTitle: snap.quizTitle,
+    totalQuestions: snap.totalQuestions,
+    me,
+    standing: newer ? held : { sv: snap.sv, score: me.score, rank: me.rank, streak: me.streak },
   });
 }
 

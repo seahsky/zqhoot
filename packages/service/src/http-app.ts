@@ -20,6 +20,7 @@ import { buildResultsCsv, checkJoinable, createSession, isExpired } from '@zqhoo
 import type { EngineConfig, ResponseRecord } from '@zqhoot/engine';
 import { ConflictError } from '@zqhoot/store';
 import type { Store } from '@zqhoot/store';
+import { PIN_LOOKUP_LIMIT, PIN_LOOKUP_WINDOW_MS, UNKNOWN_IP, pinLookupCounter } from './limits.ts';
 import { MediaError, noopLogger } from './ports.ts';
 import type {
   Clock,
@@ -58,8 +59,6 @@ export interface AppEnv {
 }
 
 const JSON_BODY_LIMIT = 256 * 1024;
-const PIN_LOOKUP_LIMIT = 30;
-const PIN_LOOKUP_WINDOW_MS = 60_000;
 const LOGIN_LIMIT = 10;
 const LOGIN_WINDOW_MS = 900_000;
 const PIN_ALLOCATION_ATTEMPTS = 10;
@@ -267,7 +266,7 @@ export function createHttpApp(deps: HttpAppDeps): Hono<AppEnv> {
     await next();
   };
 
-  const clientIp = (c: Context): string => deps.clientIp(c) ?? 'unknown';
+  const clientIp = (c: Context): string => deps.clientIp(c) ?? UNKNOWN_IP;
 
   // ---- Public ------------------------------------------------------------------------
 
@@ -281,7 +280,7 @@ export function createHttpApp(deps: HttpAppDeps): Hono<AppEnv> {
     const ip = clientIp(c);
     const now = clock.now();
 
-    const counter = `pin:${ip}`;
+    const counter = pinLookupCounter(ip);
 
     // The block lives in the store, not in this instance: another Lambda container must refuse
     // a valid PIN from an IP that went over the limit, or a 200 among 429s would still tell an
