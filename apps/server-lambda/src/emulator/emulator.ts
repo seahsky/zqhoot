@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import type { IncomingMessage, RequestListener, Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -65,12 +65,25 @@ async function loadHandler(handlersDir: string, name: string): Promise<LambdaHan
  * per process.
  */
 export async function startEmulator(cfg: EmulatorConfig, logger: Logger): Promise<RunningEmulator> {
-  const mgmtServer = createServer();
+  // The listeners bind before the table and the handlers are ready (see below). Until then every
+  // request gets a 503: a request with no 'request' listener is never answered, and a readiness
+  // probe that sends one then waits forever instead of retrying.
+  let handleMgmt: RequestListener | null = null;
+  let handleHttp: RequestListener | null = null;
+  const until =
+    (handler: () => RequestListener | null): RequestListener =>
+    (req, res) => {
+      const ready = handler();
+      if (ready !== null) return void ready(req, res);
+      res.writeHead(503, { 'content-type': 'text/plain', 'retry-after': '1' });
+      res.end('starting');
+    };
+  const mgmtServer = createServer(until(() => handleMgmt));
   const wsServer = createServer((_req, res) => {
     res.writeHead(426, { 'content-type': 'text/plain' });
     res.end('WebSocket endpoint: connect with ws://');
   });
-  const httpServer = createServer();
+  const httpServer = createServer(until(() => handleHttp));
   const servers = [mgmtServer, wsServer, httpServer];
   // Node closes idle keep-alive sockets after 5 s, and the SDK's pooled sockets outlive that: the
   // next request on a socket the server just closed fails with ECONNRESET. API Gateway holds
@@ -162,7 +175,7 @@ export async function startEmulator(cfg: EmulatorConfig, logger: Logger): Promis
     },
     logger,
   });
-  mgmtServer.on('request', (req, res) => void management(req, res));
+  handleMgmt = (req, res) => void management(req, res);
 
   const runtimeConfig = JSON.stringify(
     RuntimeConfig.parse({
@@ -181,7 +194,7 @@ export async function startEmulator(cfg: EmulatorConfig, logger: Logger): Promis
     logger,
   });
   const staticFiles = createStaticHandler(cfg.webDist);
-  httpServer.on('request', (req: IncomingMessage, res: ServerResponse) => {
+  handleHttp = (req: IncomingMessage, res: ServerResponse) => {
     const path = (req.url ?? '/').split('?')[0] ?? '/';
     if (path === '/config.json') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-cache' });
@@ -189,7 +202,7 @@ export async function startEmulator(cfg: EmulatorConfig, logger: Logger): Promis
     }
     if (path === '/api' || path.startsWith('/api/')) return void api(req, res);
     void staticFiles(req, res);
-  });
+  };
 
   return {
     ports: { http, ws, mgmt },
