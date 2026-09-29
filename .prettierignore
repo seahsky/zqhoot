@@ -3,3 +3,4 @@ dist/
 coverage/
 infra/
 docs/research/
+apps/server-node/data/
