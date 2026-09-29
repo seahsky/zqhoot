@@ -141,9 +141,23 @@ export function createHostApi(o: HostApiOptions): HostApi {
   };
 }
 
+/** The UTF-8 byte order mark: spreadsheet apps read it as "this file is UTF-8, not a legacy code page". */
+const BYTE_ORDER_MARK = '\uFEFF';
+
+/**
+ * The file's contents as a blob. `Response.text()` drops a leading byte order mark, so the CSV
+ * the server sends (with one) reaches here without it. A CSV is written back with the mark, so
+ * that nicknames with accents or emoji open correctly in a spreadsheet.
+ */
+export function textFileBlob(text: string, mime = 'text/csv'): Blob {
+  const body =
+    mime === 'text/csv' && !text.startsWith(BYTE_ORDER_MARK) ? BYTE_ORDER_MARK + text : text;
+  return new Blob([body], { type: `${mime};charset=utf-8` });
+}
+
 /** Saves text as a file. The link is clicked while attached because Firefox ignores a detached one. */
 export function saveTextFile(name: string, text: string, mime = 'text/csv'): void {
-  const url = URL.createObjectURL(new Blob([text], { type: `${mime};charset=utf-8` }));
+  const url = URL.createObjectURL(textFileBlob(text, mime));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;

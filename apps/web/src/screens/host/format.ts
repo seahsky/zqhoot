@@ -21,6 +21,10 @@ export const PHASE_LABEL: Record<Phase, string> = {
   ended: 'Ended',
 };
 
+export function playerCountLabel(n: number): string {
+  return `${n} ${n === 1 ? 'player' : 'players'}`;
+}
+
 export function questionCountLabel(n: number): string {
   return `${n} ${n === 1 ? 'question' : 'questions'}`;
 }

@@ -39,7 +39,8 @@ export function ControlBar(p: ControlBarProps) {
           {p.nextLabel}
         </button>
       )}
-      {p.canClose && (
+      {/* During a question the primary action already ends it; a second button would repeat it. */}
+      {p.canClose && p.nextLabel === null && (
         <button type="button" className={s.button} onClick={p.onClose}>
           End question
         </button>

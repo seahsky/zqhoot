@@ -200,6 +200,54 @@ describe('http handler', () => {
     expect(bad.statusCode).toBe(401);
   });
 
+  it('sends the results CSV as base64 so its byte order mark survives', async () => {
+    stubHttpEnv({ ZQ_AUTH_MODE: 'local', ZQ_EMULATOR: '1' });
+    vi.stubEnv('AWS_LAMBDA_FUNCTION_NAME', undefined);
+    const handler = await loadHandler();
+    const login = await handler(
+      v2Event('POST', '/api/auth/login', { body: { username: 'admin', password: 'admin' } }),
+      context,
+    );
+    const { token } = json(login) as { token: string };
+    const auth = { authorization: `Bearer ${token}` };
+    const quiz = await handler(
+      v2Event('POST', '/api/quizzes', {
+        headers: auth,
+        body: {
+          title: 'CSV bytes',
+          settings: { streakBonus: false, showQuestionOnDevices: true, readSeconds: 0 },
+          questions: [
+            {
+              id: 'q1-csv',
+              type: 'truefalse',
+              prompt: 'Sky is blue',
+              timeLimitSec: 10,
+              correct: true,
+              points: 1,
+            },
+          ],
+        },
+      }),
+      context,
+    );
+    expect(quiz.statusCode).toBe(200);
+    const { id: quizId } = json(quiz) as { id: string };
+    const session = await handler(
+      v2Event('POST', '/api/sessions', { headers: auth, body: { quizId } }),
+      context,
+    );
+    const { sessionId } = json(session) as { sessionId: string };
+
+    const csv = await handler(
+      v2Event('GET', `/api/sessions/${sessionId}/results.csv`, { headers: auth }),
+      context,
+    );
+    expect(csv.statusCode).toBe(200);
+    expect(csv.isBase64Encoded).toBe(true);
+    const bytes = Buffer.from(csv.body ?? '', 'base64');
+    expect([...bytes.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+  });
+
   it('refuses to start with local auth inside Lambda, even with the emulator flag', async () => {
     stubHttpEnv({
       ZQ_AUTH_MODE: 'local',

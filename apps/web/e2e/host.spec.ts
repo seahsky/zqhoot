@@ -303,7 +303,11 @@ test.describe('the dashboard', () => {
     expect(file.suggestedFilename()).toBe('zqhoot-results-482915.csv');
     const path = await file.path();
     const { readFileSync } = await import('node:fs');
-    expect(readFileSync(path, 'utf8')).toBe(api.csv);
+    // The saved file is the reply byte for byte: one UTF-8 byte order mark, then the CSV. (Reading
+    // the reply as text drops the mark, so the dashboard has to write it back.)
+    const saved = readFileSync(path);
+    expect([...saved.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    expect(saved.subarray(3).toString('utf8')).toBe(api.csv);
     const [call] = api.calledWith('GET', `/api/sessions/${SESSION}/results.csv`);
     expect(call?.auth).toBe(`Bearer ${TOKEN}`);
     expect(call?.accept).toBe('text/csv');

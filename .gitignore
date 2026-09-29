@@ -39,3 +39,6 @@ deploy/vm/data/
 # apps/web e2e artifacts
 apps/web/e2e/screenshots/
 apps/web/dist-e2e/
+
+# apps/web live e2e artifacts
+apps/web/e2e-live/screenshots/

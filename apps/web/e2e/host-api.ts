@@ -108,7 +108,9 @@ export class HostApi {
     }
     const results = /^\/api\/sessions\/([^/]+)\/results\.csv$/.exec(path);
     if (results && method === 'GET') {
-      return route.fulfill({ status: 200, contentType: 'text/csv', body: this.csv });
+      // Like the real server, the file starts with a UTF-8 byte order mark.
+      const body = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(this.csv)]);
+      return route.fulfill({ status: 200, contentType: 'text/csv', body });
     }
     if (path === '/api/quizzes' && method === 'POST') {
       await this.gates.save;

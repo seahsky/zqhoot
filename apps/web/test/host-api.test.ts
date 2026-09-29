@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { QuizSummary } from '@zqhoot/protocol';
 import { EDIT_QUIZ } from '../src/dev/fixtures/edit.ts';
 import { ApiRequestError } from '../src/net/http.ts';
-import { createHostApi, listOf } from '../src/net/hostApi.ts';
+import { createHostApi, listOf, textFileBlob } from '../src/net/hostApi.ts';
 import { validateDraft } from '../src/state/editor.ts';
 
 interface Call {
@@ -137,6 +137,35 @@ describe('the host API', () => {
     expect(await api.downloadResults('session-demo-01')).toBe('nickname,score\n');
     expect(calls[0]?.headers.Accept).toBe('text/csv');
     expect(calls[0]?.url).toBe('/api/sessions/session-demo-01/results.csv');
+  });
+
+  it('saves the CSV with its UTF-8 byte order mark, which reading the reply as text drops', async () => {
+    const bytes = new Uint8Array([
+      0xef,
+      0xbb,
+      0xbf,
+      ...new TextEncoder().encode('nickname\r\nZoë\r\n'),
+    ]);
+    const { api } = fakeApi(
+      () => new Response(bytes, { status: 200, headers: { 'Content-Type': 'text/csv' } }),
+    );
+    const text = await api.downloadResults('session-demo-01');
+    expect(text.startsWith('\uFEFF'), 'Response.text() strips the mark').toBe(false);
+
+    const saved = new Uint8Array(await textFileBlob(text).arrayBuffer());
+    expect([...saved.subarray(0, 3)], 'the first three bytes of the saved file').toEqual([
+      0xef, 0xbb, 0xbf,
+    ]);
+    expect(saved, 'the file is the reply, byte for byte').toEqual(bytes);
+  });
+
+  it('writes the byte order mark once, and only into a CSV', async () => {
+    // (`Blob.text()` would hide the mark, so the bytes are compared.)
+    const bytes = async (b: Blob) => [...new Uint8Array(await b.arrayBuffer())];
+    expect(await bytes(textFileBlob('a,b'))).toEqual([0xef, 0xbb, 0xbf, 0x61, 0x2c, 0x62]);
+    expect(await bytes(textFileBlob('\uFEFFa,b'))).toEqual([0xef, 0xbb, 0xbf, 0x61, 0x2c, 0x62]);
+    expect(await bytes(textFileBlob('abc', 'text/plain'))).toEqual([0x61, 0x62, 0x63]);
+    expect(textFileBlob('a,b').type).toBe('text/csv;charset=utf-8');
   });
 
   it('a 409 on save comes through with its status, for the conflict screen', async () => {

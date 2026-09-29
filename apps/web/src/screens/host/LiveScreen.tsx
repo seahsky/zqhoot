@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { HostSnapshot, ModerationStatus } from '@zqhoot/protocol';
 import { formatPin } from '../../state/charts.ts';
 import { nextAction } from '../../state/commands.ts';
+import { playerCount } from '../../state/host.ts';
 import type { HostState } from '../../state/host.ts';
 import { typeLabel } from '../../state/editor.ts';
 import { Button, ButtonLink } from '../../ui/Button.tsx';
@@ -11,7 +12,7 @@ import { StatusLine } from '../../ui/StatusLine.tsx';
 import { Distribution } from './Distribution.tsx';
 import { Moderation } from './Moderation.tsx';
 import { Roster } from './Roster.tsx';
-import { PHASE_LABEL } from './format.ts';
+import { PHASE_LABEL, playerCountLabel } from './format.ts';
 import styles from './Host.module.css';
 
 export interface LiveScreenProps {
@@ -36,7 +37,16 @@ function connectionText(status: HostState['connection']): string {
   return '';
 }
 
-function Summary({ snap, joinUrl }: { snap: HostSnapshot; joinUrl: string }) {
+function Summary({
+  snap,
+  players,
+  joinUrl,
+}: {
+  snap: HostSnapshot;
+  /** The live roster's size: `snap.roster` is as old as the last snapshot, empty in the lobby. */
+  players: number;
+  joinUrl: string;
+}) {
   const q =
     snap.questionIndex >= 0 ? `Question ${snap.questionIndex + 1} of ${snap.totalQuestions}` : null;
   return (
@@ -46,7 +56,7 @@ function Summary({ snap, joinUrl }: { snap: HostSnapshot; joinUrl: string }) {
       <ul className={styles.chips}>
         <li className={styles.chip}>{PHASE_LABEL[snap.phase]}</li>
         {q && <li className={styles.chip}>{q}</li>}
-        <li className={styles.chip}>{snap.roster.length} players</li>
+        <li className={styles.chip}>{playerCountLabel(players)}</li>
         {snap.locked && <li className={styles.chip}>Joining locked</li>}
       </ul>
       <p className={styles.join}>
@@ -184,7 +194,7 @@ export function LiveScreen(p: LiveScreenProps) {
         </div>
       ) : (
         <>
-          <Summary snap={snap} joinUrl={p.joinUrl} />
+          <Summary snap={snap} players={playerCount(state)} joinUrl={p.joinUrl} />
           <div className={styles.columns}>
             <div className={styles.main}>
               <Controls

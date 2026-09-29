@@ -1,6 +1,6 @@
 import { LambdaClient } from '@aws-sdk/client-lambda';
 import { S3Client } from '@aws-sdk/client-s3';
-import { handle } from 'hono/aws-lambda';
+import { defaultIsContentTypeBinary, handle } from 'hono/aws-lambda';
 import { createHttpApp } from '@zqhoot/service';
 import { apiGatewayClientIp } from './client-ip.ts';
 import { loadHttpConfig } from './config.ts';
@@ -51,4 +51,10 @@ const app = createHttpApp({
   cors: { origins: config.corsOrigins },
 });
 
-export const handler = handle(app);
+// The adapter turns text bodies into strings with Response.text(), which drops the UTF-8 byte
+// order mark the results CSV starts with (spreadsheet apps need it to pick the encoding).
+// Sending CSV as base64 keeps the bytes intact.
+export const handler = handle(app, {
+  isContentTypeBinary: (contentType) =>
+    defaultIsContentTypeBinary(contentType) || contentType.startsWith('text/csv'),
+});
