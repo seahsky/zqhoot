@@ -400,12 +400,21 @@ test('a host and five players play a whole quiz to the podium', async ({ cast, r
       expect(main).toContain(`${r.score.toLocaleString('en-US')} point`);
       const scoredRight = MOVES[slot].filter((m, i) => isRight(QUESTIONS[i] as Q, m)).length;
       expect(main).toContain(`${scoredRight} of 3 correct`);
-      // The top three are on every phone, in order.
+      // The top three are on every phone, in order, and only the phone's own row is marked.
       const listed = await p.page
         .getByRole('main')
         .locator('ol > li')
-        .evaluateAll((items) => items.map((li) => li.children[1]?.textContent?.trim()));
-      expect(listed).toEqual(['Alice', 'Eve', 'Bobby']);
+        .evaluateAll((items) =>
+          items.map((li) => ({
+            name: li.children[1]?.firstChild?.textContent?.trim(),
+            mine: li.getAttribute('aria-current') === 'true',
+            you: li.textContent?.includes('You') ?? false,
+          })),
+        );
+      expect(listed.map((row) => row.name)).toEqual(['Alice', 'Eve', 'Bobby']);
+      const own = listed.filter((row) => row.mine);
+      expect(own.map((row) => row.name)).toEqual(r.rank <= 3 ? [r.name] : []);
+      expect(own.every((row) => row.you)).toBe(true);
       await shot(p.page, `${slot}-final`);
     }
     await shot(hostActor.page, 'host-ended');

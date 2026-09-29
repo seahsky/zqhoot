@@ -47,15 +47,15 @@ export class Presenter {
     const count = this.page.getByTestId('answer-count');
     await expect
       .poll(async () => {
-        const m = /^([\d,]+) \/ ([\d,]+) answered$/.exec((await count.innerText()).trim());
+        const m = /^([\d,]+) of ([\d,]+) answered$/.exec((await count.innerText()).trim());
         return m && Number(m[2]?.replace(/,/g, '')) === of ? Number(m[1]?.replace(/,/g, '')) : -1;
       })
       .toBeGreaterThanOrEqual(n);
   }
 
-  /** "3 / 5 answered" appears once the options are open and moves as answers come in. */
+  /** "3 of 5 answered" appears once the options are open and moves as answers come in. */
   async expectAnswered(n: number, of: number): Promise<void> {
-    await expect(this.page.getByTestId('answer-count')).toHaveText(`${n} / ${of} answered`);
+    await expect(this.page.getByTestId('answer-count')).toHaveText(`${n} of ${of} answered`);
   }
 
   /** The reveal screen for a question, whichever way it was closed. */
