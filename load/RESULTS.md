@@ -9,7 +9,7 @@
 - **Lambda code path (emulator, run 2, quiet machine).** Median broadcast latency 19-75 ms, at most 460 ms, and every question arrived at least 992 ms before its options opened, against the 1,500 ms lead. Answers were acknowledged in 10 ms at the median and 131 ms at worst when players answered over several seconds, as people do.
 - **When all 400 answer at once, the emulator's acknowledgements take about 1.5 s at the median** (Node: 25 ms). That is an emulator property, explained below with evidence: it runs every invocation on one event loop and that loop is saturated while the burst drains. It says little about AWS.
 - **A rerun after the review fixes (run 6) met the same gates with the same counts, on a much busier machine.** With 67-76% of all cores in use by other work, median broadcast latency was 10-111 ms on Node and 29-121 ms on the emulator, and the worst question margin fell to 649 ms on Node (lead 750 ms) and 633 ms on the emulator (lead 1,500 ms): thinner, still positive.
-- **Idle-machine verification by the lead (see the next section) matches:** every gate met on both targets, with Node broadcasts at 7-9 ms median and every question arriving at least 700 ms before its options opened.
+- **Idle-machine verification by the lead (see the next section) matches:** every gate met on both targets, with Node broadcasts at 7-9 ms median and every question arriving at least 715 ms before its options opened.
 - **Nothing missed its target.** What the runs cannot say (network latency, AWS itself, and more) is listed under [What these numbers do not cover](#what-these-numbers-do-not-cover).
 
 ## Lead verification runs (idle machine)
@@ -17,11 +17,11 @@
 Taken by the lead after every build task had merged, with no other agents running: the machine averaged 4.8% of all cores during the Node run and 13.9% during the emulator run, most of the latter being the emulator and DynamoDB Local themselves. These are the figures to quote.
 
 - **Node server:** every gate met.
-  - Broadcast latency p50 7-9 ms for `question`/`reveal`/`leaderboard`, p99 at most 102 ms (the `leaderboard` fan-out, which also computes 400 personal standings).
-  - Every question reached every player at least 700 ms before its options opened (lead 750 ms). Answer acks p99 5.4 ms.
+  - Broadcast latency p50 7-9 ms for `question`/`reveal`/`leaderboard`, p99 at most 102 ms.
+  - Every question reached every player at least 715 ms before its options opened (lead 750 ms). Answer acks p99 5.4 ms.
   - The server peaked at 24% of one core and 164 MB.
 - **Lambda handlers behind the emulator:** every gate met.
-  - Broadcast p50 about 20 ms, p99 at most 117 ms for `question`, and one outlier `question` delivery at 429 ms, still at least 1,291 ms before options opened (lead 1,500 ms), so fan-out never cut into answer time.
+  - Broadcast p50 about 20 ms and p99 at most 117 ms; the slowest single `question` delivery took 429 ms. Every question still reached every player at least 867 ms before its options opened (lead 1,500 ms), so fan-out never cut into answer time.
   - `close-reveal` about 1.1 s is the designed 1,000 ms settle wait on the Lambda path (ADR-0006), not processing time.
   - One answer ack of 4,000 is missing from the ack trend (n = 3,999) because that player's socket dropped before the ack arrived; the reveal settled it (`you.answered`), so it counts as accepted and delivered, as in run 6.
 
