@@ -1,0 +1,99 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.label {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.hint {
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+
+/* 16px minimum keeps iOS Safari from zooming into the field on focus. */
+.control {
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.75rem 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.control[aria-invalid='true'] {
+  box-shadow: inset 0 0 0 3px var(--ink);
+}
+
+.control::placeholder {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.code {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.area {
+  min-height: 8rem;
+  resize: vertical;
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.error svg {
+  flex: none;
+  margin-top: 0.1rem;
+}
+
+.errorIcon {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.errorMark {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.counter {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+@media (forced-colors: active) {
+  .control[aria-invalid='true'] {
+    border-width: 6px;
+  }
+}

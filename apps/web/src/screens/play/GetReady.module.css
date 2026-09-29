@@ -1,0 +1,19 @@
+.countIn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.numeral {
+  font-size: var(--fs-countdown);
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}

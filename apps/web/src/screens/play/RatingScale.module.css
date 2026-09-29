@@ -1,0 +1,48 @@
+.scale {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.caption {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(3.5rem, 1fr));
+  gap: var(--gap);
+}
+
+.button {
+  min-height: 4.5rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.button:disabled {
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.labels span:last-child {
+  text-align: right;
+}

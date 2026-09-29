@@ -1,0 +1,108 @@
+/* Shared by every player state. */
+
+.eyebrow {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.title {
+  font-size: var(--fs-title);
+  font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.lead {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--ink-2);
+}
+
+.prompt {
+  font-size: var(--fs-question);
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.top {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* Answers sit low on the screen, within thumb reach (research 3.1). */
+.answers {
+  margin-top: auto;
+  padding-top: 0.5rem;
+}
+
+.centered {
+  flex: 1;
+  justify-content: center;
+}
+
+.stat {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  margin-top: auto;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.rank {
+  flex: none;
+  min-width: 3ch;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.end {
+  flex: none;
+  margin-left: auto;
+}

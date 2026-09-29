@@ -1,0 +1,41 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-width: 3rem;
+  min-height: 3.5rem;
+  padding: 0.75rem 1.5rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.primary {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.secondary {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.block {
+  display: flex;
+  width: 100%;
+}
+
+.button:disabled,
+.button[aria-disabled='true'] {
+  background: var(--surface);
+  color: var(--ink-2);
+  border-style: dashed;
+  cursor: not-allowed;
+}

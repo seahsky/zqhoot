@@ -1,0 +1,28 @@
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.strip {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: var(--outline-w) solid var(--ink);
+}
+
+.nickname {
+  min-width: 0;
+  font-size: 1.125rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.score {
+  flex: none;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}

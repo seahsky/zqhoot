@@ -35,3 +35,7 @@ deploy/vm/data/
 
 # Agent worktrees
 .claude/worktrees/
+
+# apps/web e2e artifacts
+apps/web/e2e/screenshots/
+apps/web/dist-e2e/

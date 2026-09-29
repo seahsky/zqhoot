@@ -1,0 +1,53 @@
+.option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 0.75rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+div.option {
+  cursor: default;
+}
+
+.letter {
+  flex: none;
+  min-width: 1.5rem;
+  font-size: var(--fs-badge);
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.text {
+  min-width: 0;
+  font-size: var(--fs-answer);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.chosen {
+  box-shadow: inset 0 0 0 3px var(--ink);
+}
+
+/* Inert options stay readable; dashed outline (not opacity) says "not yet". */
+.disabled {
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+/* Forced colours remove box-shadow, so the player's own pick needs a heavier border instead. */
+@media (forced-colors: active) {
+  .chosen {
+    border-width: 6px;
+  }
+}

@@ -1,0 +1,22 @@
+.glyph {
+  flex: none;
+  overflow: visible;
+}
+
+/* Non-scaling so the outline is a true 3-4 CSS px at every glyph size. */
+.shape {
+  stroke: var(--ink);
+  stroke-width: var(--outline-w);
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Keep the answer colours; only the outline follows the user's palette. */
+@media (forced-colors: active) {
+  .glyph {
+    forced-color-adjust: none;
+  }
+  .shape {
+    stroke: CanvasText;
+  }
+}
