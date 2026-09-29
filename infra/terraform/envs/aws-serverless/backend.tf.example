@@ -1,0 +1,19 @@
+# OPTIONAL. Without a backend block Terraform keeps state in a local terraform.tfstate next to this
+# file, which is fine for a single operator and is gitignored.
+#
+# To keep state in S3 instead (shared between operators, or off your laptop):
+#   1. Create a private bucket for state yourself, outside this stack, with versioning on.
+#   2. Copy this file to backend.tf (gitignored) and fill in the bucket.
+#   3. Run terraform init -migrate-state.
+#
+# use_lockfile needs Terraform 1.10 or later. It locks with a .tflock object in the same bucket,
+# so no DynamoDB lock table (and no extra always-on resource) is required.
+terraform {
+  backend "s3" {
+    bucket       = "my-terraform-state-bucket"
+    key          = "zqhoot/aws-serverless/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

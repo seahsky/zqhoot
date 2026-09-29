@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars (which is gitignored) and adjust.
+#
+# Nothing secret belongs in here. The app's secrets (ZQ_JWT_SECRET, the admin password hash) are
+# written to SSM Parameter Store with scripts/vm-put-secrets.sh and read by the instance role.
+
+region = "us-east-1"
+name   = "zqhoot"
+
+# Required. The instance clones this URL anonymously, so it must be public.
+repo_url = "https://example.com/your-org/zqhoot.git"
+
+# Pin a tag or commit for a repeatable deployment.
+repo_ref = "main"
+
+# DNS name Caddy requests a certificate for. Point its A record at the public_ip output.
+domain = "quiz.example.com"
+
+instance_type = "t4g.small"
+
+# SSH stays closed unless you set this; SSM Session Manager needs no open port.
+# ssh_cidr = "203.0.113.7/32"

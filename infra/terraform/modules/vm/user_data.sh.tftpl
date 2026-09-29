@@ -1,0 +1,70 @@
+#!/bin/bash
+# First-boot bootstrap for the zqhoot VM. Contains no secrets: the app's environment is fetched
+# from SSM Parameter Store by zqhoot-fetch-env, using the instance role.
+# Progress is logged to /var/log/zqhoot-bootstrap.log.
+set -euo pipefail
+exec > >(tee -a /var/log/zqhoot-bootstrap.log) 2>&1
+
+# cloud-init can run user data without HOME set; git wants one.
+export HOME=/root
+export DEBIAN_FRONTEND=noninteractive
+# First boot races with the archive's own unattended updates for the apt and dpkg locks.
+retry() {
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    "$@" && return 0
+    sleep 20
+  done
+  return 1
+}
+retry apt-get update
+retry apt-get install -y --no-install-recommends ca-certificates curl git jq unzip docker.io docker-compose-v2
+systemctl enable --now docker
+
+# AWS CLI v2 is not in the Ubuntu 24.04 archive.
+case "$(uname -m)" in
+  aarch64) cli_arch=aarch64 ;;
+  x86_64) cli_arch=x86_64 ;;
+  *)
+    echo "unsupported architecture: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$cli_arch.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+rm -rf /tmp/aws /tmp/awscliv2.zip
+
+mkdir -p /etc/zqhoot
+cat > /etc/zqhoot/vm.conf <<'ZQ_VM_CONF'
+AWS_REGION='${region}'
+ZQ_SSM_PATH='${ssm_path}'
+ZQ_APP_DIR='/opt/zqhoot'
+ZQ_DOMAIN='${domain}'
+ZQ_VM_CONF
+
+if [ ! -d /opt/zqhoot/.git ]; then
+  git clone '${repo_url}' /opt/zqhoot
+fi
+cd /opt/zqhoot
+git fetch --tags origin
+ref='${repo_ref}'
+if git rev-parse --verify --quiet "origin/$ref^{commit}" > /dev/null; then
+  git checkout --detach "origin/$ref"
+else
+  git checkout --detach "$ref"
+fi
+
+cat > /usr/local/sbin/zqhoot-fetch-env <<'ZQ_FETCH_ENV'
+${fetch_env_script}
+ZQ_FETCH_ENV
+chmod 755 /usr/local/sbin/zqhoot-fetch-env
+
+cat > /etc/systemd/system/zqhoot.service <<'ZQ_UNIT'
+${unit_file}
+ZQ_UNIT
+
+systemctl daemon-reload
+systemctl enable zqhoot.service
+# --no-block: the unit waits for the operator to publish the environment, which must not hold up cloud-init.
+systemctl start --no-block zqhoot.service
