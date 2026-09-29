@@ -42,6 +42,11 @@ Owner: Sonnet implementation agent. Reviewer: independent Opus agent. Source: th
    - The editor preview's alt follows the same rule.
    - Update protocol, engine and editor tests. Players never receive images, so the player view is unchanged.
 
+6. **Follow-ups from the V2 visual task.** V2 could not do these because it did not own the files.
+   - `ui/TextField.module.css` draws the invalid state as a border plus `box-shadow: inset`, which shows as a double line under `prefers-contrast: more`. Replace it with one thicker border and compensating padding, as `AnswerOption`'s chosen state does now. Then delete the scoped overrides in `screens/join/Join.module.css` and `screens/play/TextEntry.module.css`. Check the invalid fields on the join, text-entry, host login and editor screens in the high-contrast and forced-colours screenshots.
+   - `revealHeadline('unscored')` in `state/format.ts` uses the same words as the "answer locked in" heading. Give the reveal its own headline, such as "Question closed". The card below already says no points were given. `announce.ts` and `e2e-live/player.ts` follow the function, so update any test that pins the old text.
+   - The player reducer (`state/player.ts`) keeps the player's own submission for the current question through its reveal. It is not kept across a resume, because the snapshot does not carry it. The unscored reveal shows it ("Your answer: B · Pizza", or the words or text entered). After a resume it simply shows nothing.
+
 ## Findings
 
 ### FA-16 (major) A 'forbidden' host.hello starts an unthrottled Cognito refresh and reconnect loop
