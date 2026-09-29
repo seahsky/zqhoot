@@ -8,7 +8,7 @@ Updated as tasks complete. Each task has a spec with acceptance criteria in `doc
 | ---------------------- | ----------- | ----------------------------------------------------------------------------------------- |
 | 1. Research            | done        | `docs/research/*.md`, `docs/research/SUMMARY.md`                                          |
 | 2. Architecture        | done        | `docs/ARCHITECTURE.md`, `docs/adr/*`, `packages/protocol`, domain model, `Store` contract |
-| 3-4. MVP build, wave 1 | in progress | engine, store, infra, web foundation                                                      |
+| 3-4. MVP build, wave 1 | gate review | engine, store, infra, web foundation merged; web-b running                                |
 | 3-4. MVP build, wave 2 | pending     | service, servers, host/presenter/editor UI, VM deploy                                     |
 | 5. Verification        | pending     | E2E, load test, visual check, independent audit, README                                   |
 
@@ -18,9 +18,9 @@ Updated as tasks complete. Each task has a spec with acceptance criteria in `doc
 | ---------------- | --------------------------------------------- | -------------------------------- | ------- |
 | W1-engine        | [W1-engine](tasks/W1-engine.md)               | protocol                         | merged  |
 | W1-store         | [W1-store](tasks/W1-store.md)                 | engine model                     | merged  |
-| W1-infra         | [W1-infra](tasks/W1-infra.md)                 | none                             | running |
-| W1-web-a         | [W1-web-a](tasks/W1-web-a.md)                 | protocol                         | running |
-| W1-web-b         | [W1-web-b](tasks/W1-web-b.md)                 | W1-web-a                         | pending |
+| W1-infra         | [W1-infra](tasks/W1-infra.md)                 | none                             | merged  |
+| W1-web-a         | [W1-web-a](tasks/W1-web-a.md)                 | protocol                         | merged  |
+| W1-web-b         | [W1-web-b](tasks/W1-web-b.md)                 | W1-web-a                         | running |
 | W2-service       | [W2-service](tasks/W2-service.md)             | W1-engine, W1-store              | running |
 | W2-server-node   | [W2-server-node](tasks/W2-server-node.md)     | W2-service                       | pending |
 | W2-server-lambda | [W2-server-lambda](tasks/W2-server-lambda.md) | W2-service                       | pending |
