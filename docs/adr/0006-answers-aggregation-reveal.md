@@ -46,6 +46,6 @@ Open-ended results are bounded so every message fits API Gateway's 128 KB limit 
 
 ## Amendment (2026-09-29, final audit)
 
-- Timed questions close at `deadline + answerGraceMs`, not at the deadline. Host clients send the timer close at that instant. The service holds an earlier timer close until then: the VM leaves it to its scheduler, and Lambda waits with a bounded sleep. Closing at the bare deadline refused answers inside the ADR-0005 grace window as `too-late`.
+- Timed questions close at `deadline + answerGraceMs`, not at the deadline. Host clients send the timer close at that instant. The service holds an earlier timer close until then: the VM leaves it to its scheduler, and Lambda waits with a bounded sleep. Closing at the bare deadline refused answers inside the ADR-0005 grace window as `too-late`. A manual close or a Next from the question that the host sends at or after the deadline is held the same way. The presenter shows "Time's up" at the deadline, and a prompt Next must not cut the window. Before the deadline both stay immediate (ending early is the host's choice), and so does an `all-answered` close.
 - A host client resends a timer close that got no response, with backoff, and after every reconnect. `host.close` is idempotent through its `questionIndex`.
 - Each `host.stats` poll also reads the session's connection items, to compute `expected`: one extra Query per poll per host client.
