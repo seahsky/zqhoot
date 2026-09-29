@@ -50,7 +50,7 @@ function CurrentScreen({ state, onAnswer, onLeave, onReload }: PlayScreenProps) 
     case 'leaderboard':
       return <Leaderboard view={view} />;
     case 'ended':
-      return <Ended view={view} />;
+      return <Ended view={view} meId={state.me?.playerId} />;
     case 'kicked':
       return <Kicked />;
     case 'session-over':
@@ -78,7 +78,7 @@ export function PlayScreen(props: PlayScreenProps) {
   }, [state.view.screen]);
 
   return (
-    <PhoneShell header={<PlayerHeader me={state.me} connection={state.connection} />}>
+    <PhoneShell wide header={<PlayerHeader me={state.me} connection={state.connection} />}>
       <StatusLine visible={false}>{announcementFor(state.view)}</StatusLine>
       <CurrentScreen {...props} />
     </PhoneShell>

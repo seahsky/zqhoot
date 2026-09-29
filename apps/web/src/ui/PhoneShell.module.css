@@ -1,7 +1,7 @@
 /*
  * Phones anchor actions and answers to the bottom, in the thumb zone. On a tablet or a
  * laptop that would strand them a screen away from the field they belong to, so above the
- * breakpoint the content is grouped and centred instead. Screens read these three
+ * breakpoint the content is grouped just under the header instead. Screens read these two
  * properties rather than repeating the media query: `--push` is the margin above bottom
  * groups, `--fill` says whether a section stretches to the free height.
  */
@@ -45,11 +45,14 @@
     --fill: 0;
   }
 
-  /* Spacers rather than `justify-content: center`, which would push the top of a tall
-     screen out of reach instead of scrolling. */
-  .main::before,
-  .main::after {
-    content: '';
-    flex: 1 1 0;
+  /* A fixed offset, not centring: the heading then sits at the same place on every state of
+     the screen, however tall the content below it is. */
+  .main {
+    padding-top: clamp(0rem, 4vh, 2.5rem);
+  }
+
+  /* Four 80-character options and the timer fit a 768px-high laptop only in a wider column. */
+  .wide {
+    max-width: 40rem;
   }
 }

@@ -2,15 +2,22 @@ import { ordinal, pointsLabel, revealHeadline } from '../../state/format.ts';
 import type { PlayerView } from '../../state/player.ts';
 import { AnswerOption } from '../../ui/AnswerOption.tsx';
 import { ResultIcon } from '../../ui/ResultIcon.tsx';
+import { StatCard } from './StatCard.tsx';
+import { scoreFigure } from './figures.ts';
+import type { Figure } from './figures.ts';
 import styles from './play.module.css';
 import reveal from './Reveal.module.css';
 
 type RevealView = Extract<PlayerView, { screen: 'reveal' }>;
 
+const UNSCORED_NOTE = 'No points were given for this question.';
+
 export function Reveal({ view }: { view: RevealView }) {
   const { outcome, variant, correctAnswer } = view;
-  // Poll-style questions carry no points, so there is no score to report.
+  // Poll-style questions carry no points, so the card says so instead of reporting a gain.
   const scored = outcome.correct !== undefined;
+  const figures: Figure[] = [scoreFigure(outcome.score)];
+  if (outcome.rank !== null) figures.push({ value: ordinal(outcome.rank), label: 'place' });
   return (
     <>
       <p className={styles.eyebrow}>
@@ -36,12 +43,7 @@ export function Reveal({ view }: { view: RevealView }) {
           </div>
         )}
 
-        {scored && (
-          <p className={styles.stat}>
-            <span>{pointsLabel(outcome.score)}</span>
-            {outcome.rank !== null && <span>{ordinal(outcome.rank)} place</span>}
-          </p>
-        )}
+        <StatCard note={scored ? undefined : UNSCORED_NOTE} figures={figures} />
       </div>
     </>
   );

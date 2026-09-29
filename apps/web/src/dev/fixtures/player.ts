@@ -20,7 +20,10 @@ import * as Q from './questions.ts';
 export const FIXTURE_MESSAGES: ServerMessage[] = [];
 
 const SV = 20;
+/** The player mid-game: every fixture that is not the lobby is seen from here. */
 const you = { ...ME, score: 1240, rank: 4, streak: 0 };
+/** Nothing is scored before the first question, so the lobby has no points and no rank. */
+const inLobby = { ...ME, score: 0, rank: null, streak: 0 };
 
 function snapshot(over: Partial<PlayerSnapshot>): PlayerSnapshot {
   return {
@@ -106,7 +109,7 @@ const leaderboardEntries = [
 const listening = questionSnapshot(Q.singleShort, 6_500);
 
 export const PLAY_FIXTURES = {
-  'play-lobby': welcome(snapshot({})),
+  'play-lobby': welcome(snapshot({ you: inLobby })),
   'play-get-ready': welcome(questionSnapshot(Q.singleShort, -3_000)),
   'play-answer-single': welcome(listening),
   'play-answer-single-long': welcome(questionSnapshot(Q.singleLong, 9_000)),
@@ -182,14 +185,15 @@ export const PLAY_FIXTURES = {
     }),
   ),
   'play-reconnecting': welcome(listening, 'reconnecting'),
-  'play-kicked': send(welcome(snapshot({})), { type: 'kicked', ts: NOW + 1_000 }),
-  'play-session-over': send(welcome(snapshot({})), {
+  // These can strike at any time; a question in progress keeps the score of a game under way.
+  'play-kicked': send(welcome(listening), { type: 'kicked', ts: NOW + 1_000 }),
+  'play-session-over': send(welcome(listening), {
     type: 'error',
     ts: NOW + 1_000,
     code: 'session-ended',
     message: 'The host ended the game.',
   }),
-  'play-out-of-date': send(welcome(snapshot({})), {
+  'play-out-of-date': send(welcome(listening), {
     type: 'error',
     ts: NOW + 1_000,
     code: 'protocol-version',

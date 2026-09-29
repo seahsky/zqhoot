@@ -1,10 +1,11 @@
 .option {
+  --pad: 0.75rem;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   width: 100%;
   min-height: 4.5rem;
-  padding: 0.75rem;
+  padding: var(--pad);
   border: var(--outline-w) solid var(--ink);
   border-radius: var(--radius);
   background: var(--surface);
@@ -35,8 +36,13 @@ div.option {
   overflow-wrap: anywhere;
 }
 
+/*
+ * One thicker border, with the padding giving back what it takes. An inset shadow beside the
+ * border leaves a seam at the rounded corners, which prefers-contrast: more makes visible.
+ */
 .chosen {
-  box-shadow: inset 0 0 0 3px var(--ink);
+  border-width: calc(var(--outline-w) + 3px);
+  padding: calc(var(--pad) - 3px);
 }
 
 /* Inert options stay readable; dashed outline (not opacity) says "not yet". */
@@ -45,9 +51,19 @@ div.option {
   cursor: not-allowed;
 }
 
-/* Forced colours remove box-shadow, so the player's own pick needs a heavier border instead. */
-@media (forced-colors: active) {
-  .chosen {
-    border-width: 6px;
+/* The glyph and letter take a narrow column, so the text keeps about two thirds of the row. */
+@media (max-width: 359px) {
+  .option {
+    --pad: 0.625rem;
+    gap: 0.5rem;
+  }
+
+  .option > svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .letter {
+    min-width: 0;
   }
 }

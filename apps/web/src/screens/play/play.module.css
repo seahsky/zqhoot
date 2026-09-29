@@ -12,6 +12,7 @@
   font-weight: 800;
   line-height: 1.15;
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .lead {
@@ -19,6 +20,7 @@
   font-weight: 600;
   line-height: 1.4;
   overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 
 .muted {
@@ -68,6 +70,59 @@
   font-weight: 700;
 }
 
+/* A card of labelled figures (Reveal, Ended, Leaderboard), the facts kept apart by a rule. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cardNote {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.figures {
+  display: flex;
+  align-items: stretch;
+}
+
+.figure {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.figure + .figure {
+  margin-left: 1rem;
+  padding-left: 1rem;
+  border-left: var(--outline-w) solid var(--ink);
+}
+
+/*
+ * The value fills its line, which stacks the label under it. Inline-block rather than block,
+ * because a block would put a line break between "2nd" and "place" in the element's
+ * innerText, and the end-to-end tests read that text ("2nd place", "870 points").
+ */
+.figureValue {
+  display: inline-block;
+  width: 100%;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.figureLabel {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
 .actions {
   display: flex;
   flex-direction: column;
@@ -82,10 +137,12 @@
 }
 
 .row {
+  --pad-y: 0.625rem;
+  --pad-x: 0.875rem;
   display: flex;
   align-items: baseline;
   gap: 0.75rem;
-  padding: 0.625rem 0.875rem;
+  padding: var(--pad-y) var(--pad-x);
   border: var(--outline-w) solid var(--ink);
   border-radius: var(--radius);
   background: var(--surface);
@@ -106,4 +163,24 @@
 .end {
   flex: none;
   margin-left: auto;
+}
+
+/*
+ * The player's own row: a double-weight border, with the padding giving back what it takes so
+ * the row keeps its size, and a "You" badge for whoever cannot tell outlines apart.
+ */
+.mine {
+  border-width: calc(var(--outline-w) * 2);
+  padding: calc(var(--pad-y) - var(--outline-w)) calc(var(--pad-x) - var(--outline-w));
+}
+
+.you {
+  display: inline-block;
+  margin-left: 0.25rem;
+  padding: 0 0.5rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: var(--fs-small);
+  line-height: 1.3;
 }

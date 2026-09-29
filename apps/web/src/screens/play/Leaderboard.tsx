@@ -1,5 +1,7 @@
-import { pointsLabel, standingSentence } from '../../state/format.ts';
+import { standingSentence } from '../../state/format.ts';
 import type { PlayerView } from '../../state/player.ts';
+import { StatCard } from './StatCard.tsx';
+import { scoreFigure } from './figures.ts';
 import styles from './play.module.css';
 
 type LeaderboardView = Extract<PlayerView, { screen: 'leaderboard' }>;
@@ -13,9 +15,7 @@ export function Leaderboard({ view }: { view: LeaderboardView }) {
       </p>
       <div className={`${styles.stack} ${styles.centered}`}>
         <h1 className={styles.title}>{standingSentence(view.standing)}</h1>
-        <p className={styles.stat}>
-          <span>{pointsLabel(view.standing.score)}</span>
-        </p>
+        <StatCard figures={[scoreFigure(view.standing.score)]} />
         <p className={`${styles.lead} ${styles.muted}`}>Next question coming up.</p>
       </div>
     </>

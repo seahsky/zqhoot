@@ -17,8 +17,10 @@ export function GetReady({ view }: { view: GetReadyView }) {
       <div className={styles.top}>
         <QuestionHeader q={view.q} />
         <p className={getReady.countIn}>
-          Get ready: options open in{' '}
-          <span className={getReady.numeral}>{view.secondsUntilOpen}</span>
+          Get ready: options{' '}
+          <span className={getReady.together}>
+            open in <span className={getReady.numeral}>{view.secondsUntilOpen}</span>
+          </span>
         </p>
       </div>
       <div className={styles.answers}>

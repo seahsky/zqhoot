@@ -26,3 +26,14 @@
   gap: var(--gap);
   margin-top: var(--push, auto);
 }
+
+/*
+ * The field in error takes one heavier border. TextField draws its emphasis as an inset
+ * shadow beside the border, and the two rounded edges are anti-aliased separately, which
+ * leaves a visible seam at the corners (most of all under prefers-contrast: more).
+ */
+.form input[aria-invalid='true'] {
+  box-shadow: none;
+  border-width: calc(var(--outline-w) + 3px);
+  padding: calc(0.75rem - 3px) calc(1rem - 3px);
+}

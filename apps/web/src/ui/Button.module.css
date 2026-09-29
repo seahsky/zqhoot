@@ -45,3 +45,36 @@
   padding: 0.5rem 1rem;
   font-size: 1rem;
 }
+
+/*
+ * Forced colours drop the primary fill, and a link renders in LinkText where a button gets
+ * ButtonText, so equivalent actions would differ by element. Every button takes the button
+ * system colours, and the primary is the one solid block (a swap, not a colour).
+ */
+@media (forced-colors: active) {
+  .button {
+    background: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonText;
+  }
+
+  .primary {
+    forced-color-adjust: none;
+    background: ButtonText;
+    color: ButtonFace;
+    border-color: ButtonText;
+  }
+
+  /* With adjustment off, the focus ring would keep the author's ink. */
+  .primary:focus-visible {
+    outline-color: CanvasText;
+  }
+
+  .button:disabled,
+  .button[aria-disabled='true'] {
+    forced-color-adjust: auto;
+    background: ButtonFace;
+    color: GrayText;
+    border-color: GrayText;
+  }
+}
