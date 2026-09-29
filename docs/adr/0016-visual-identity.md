@@ -43,6 +43,8 @@ True/false uses slots A and B (hexagon, plus), labelled "True" and "False". Ther
 - Text-size control 100/125/150% and light/dark stage toggle (WCAG F94, projector ambient light).
 - Keyboard: Space / → / PageDown = next; Enter = close question; ← does nothing (no going back mid-game); F = fullscreen; T = text size; D = dark/light; L = lock joining. Clickers send PageDown/→.
 - Charts: horizontal bars, zero baseline, direct labels "A · text · 14 · 47%", correct answer marked with a text badge "Correct" + thick outline. A hidden table alternative, and a `role="status"` summary updated at most once per second.
+- Overscan: the stage keeps a 5 u margin on every side, and all content sits inside it, including the running header (question number and "N of M answered"). Projectors with overscan or keystone correction crop 2-5% of each edge.
+- Outlines inside the stage scale with it: `--outline-w` is `max(1px, 0.45u)` on the stage, the same 3-4 px at 1366x768. A fixed pixel outline would cover the colour fills on a small stage (a presenter preview in a narrow window).
 
 ### Phone (`/join`, `/play`)
 
@@ -51,6 +53,13 @@ True/false uses slots A and B (hexagon, plus), labelled "True" and "False". Ther
 - Answer rows ≥ 72 px tall with 12 px gaps, stacked. A 2x2 grid applies above a 420 px container width, and only when every option is ≤ 24 characters. Controls ≥ 48x48 px. `touch-action: manipulation`.
 - Viewport: `width=device-width, initial-scale=1, viewport-fit=cover`. Never `maximum-scale` or `user-scalable=no`.
 - Status messages ("Answer locked", "Reconnecting…", "Time's up") in `role="status"`.
+- On a tablet or laptop, player content sits just below the header rather than being centred, so a heading stays in one place across states. Screens with long answer options get a 40 rem column, so four 80-character options fit above the fold at 1366x768.
+- Rating scales of more than five values split into balanced rows (7 is 4 + 3), or use one row when every button fits at 48 px.
+
+### Status indicators (all views)
+
+- A status ("Unsaved changes", "Question open", "Reconnecting…") is text with a leading dot, never an outlined, rounded box: here that shape means a button. The dot is drawn as a border, so forced-colours mode keeps it.
+- In forced colours every button uses the button system colours, links styled as buttons included, and the primary action is the one solid block.
 
 ### Motion
 
