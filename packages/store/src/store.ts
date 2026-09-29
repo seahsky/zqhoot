@@ -58,9 +58,13 @@ export interface Store {
   listSessionsByHost(hostId: string, limit: number): Promise<SessionSummary[]>;
 
   // --- Players ---------------------------------------------------------------------
-  /** Atomically inserts the player and reserves `player.nicknameKey` within the session. */
+  /**
+   * Atomically inserts the player and reserves `player.nicknameKey` within the session.
+   * A taken nickname gives `'nickname-taken'`; an existing `playerId` throws ConflictError.
+   */
   addPlayer(player: PlayerRecord, expiresAt: number): Promise<AddPlayerResult>;
   getPlayer(sessionId: string, playerId: string): Promise<PlayerRecord | null>;
+  /** Throws NotFoundError if the player does not exist. */
   updatePlayer(
     sessionId: string,
     playerId: string,
@@ -86,6 +90,10 @@ export interface Store {
     questionIndex: number,
     playerId: string,
   ): Promise<ResponseRecord[]>;
+  /**
+   * `responseId` is `{playerId}-{slot}`, split on the last `-`. Throws NotFoundError when no
+   * such response exists.
+   */
   setResponseStatus(
     sessionId: string,
     questionIndex: number,
