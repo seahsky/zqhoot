@@ -33,6 +33,11 @@ export const LIMITS = {
   podiumSize: 3,
   wordCloudTopN: 60,
   statsResponsesPage: 100,
+  /**
+   * Most visible open-ended responses a host result carries (the newest). Keeps `host.state`,
+   * the presenter's reveal and the stored result inside API Gateway's 128 KB message limit.
+   */
+  openRevealMax: 100,
 } as const;
 
 /** Allowed per-question time limits in seconds. `null` means untimed (host closes). */

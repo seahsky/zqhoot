@@ -64,6 +64,19 @@ export const playerSnapshot: PlayerSnapshot = {
   responses: [{ kind: 'choice', optionId: OPT_A }],
 };
 
+/** A player who resumed in the reveal phase of the single-choice question. */
+export const revealSnapshot: PlayerSnapshot = {
+  sv: 5,
+  sessionId: SID,
+  quizTitle: 'Geography',
+  phase: 'reveal',
+  questionIndex: 0,
+  totalQuestions: 5,
+  you: { playerId: PID, nickname: 'Ana', score: 900, rank: 1, streak: 1 },
+  responses: [{ kind: 'choice', optionId: OPT_A }],
+  reveal: { result: singleResult, you: outcome, question: publicQuestion },
+};
+
 export const hostSnapshot: HostSnapshot = {
   sv: 3,
   sessionId: SID,

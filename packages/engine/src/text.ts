@@ -73,13 +73,36 @@ export function sanitize(raw: string, opts: SanitizeOptions): string | null {
   return out.join('');
 }
 
+const MAX_MARKS_PER_BASE = 3;
+/** VS16 and the keycap enclosing mark are part of ordinary emoji, not decoration. */
+const NOT_DECORATION = new Set(['\uFE0F', '\u20E3']);
+
+/**
+ * Anti-Zalgo: more than three non-spacing marks in a row on one base. The run is counted instead
+ * of the marks per grapheme cluster because segmentation rule GB9c makes an Indic conjunct such as
+ * the क्ष्मी in Lakshmi a single cluster, although it holds only one mark after each base.
+ * Stacked diacritics are still caught: they are consecutive marks on one base.
+ */
+export function hasStackedMarks(text: string): boolean {
+  let run = 0;
+  // Decomposed, so a precomposed base (a + acute = U+00E1) cannot hide one of the marks.
+  for (const ch of text.normalize('NFD')) {
+    // Spacing marks (Mc) take their own width and cannot stack, so only Mn/Me count; this keeps
+    // Bengali split vowels (ো = U+09C7 U+09BE) and Hindi nukta + vowel + anusvara valid.
+    if (!/\p{M}/u.test(ch)) run = 0;
+    else if (/[\p{Mn}\p{Me}]/u.test(ch) && !NOT_DECORATION.has(ch) && ++run > MAX_MARKS_PER_BASE)
+      return true;
+  }
+  return false;
+}
+
 const collapseSpaces = (s: string) => s.replace(/\p{Zs}+/gu, ' ').trim();
 const codePointLength = (s: string) => Array.from(s).length;
 
 /** Word-cloud entry: lower-cased, no surrounding punctuation. Null if unusable. */
 export function normalizeWord(raw: string): string | null {
   const clean = sanitize(raw, { bidi: 'reject' });
-  if (clean === null) return null;
+  if (clean === null || hasStackedMarks(clean)) return null;
   const word = collapseSpaces(clean)
     .toLowerCase()
     .replace(/^[\p{P}\s]+|[\p{P}\s]+$/gu, '');
@@ -93,7 +116,7 @@ const MAX_OPEN_TEXT_NEWLINES = 3;
 export function normalizeOpenText(raw: string): string | null {
   const unified = raw.replace(/\r\n?|\u0085|\u2028|\u2029/g, '\n');
   const clean = sanitize(unified, { bidi: 'strip', multiline: true });
-  if (clean === null) return null;
+  if (clean === null || hasStackedMarks(clean)) return null;
   const lines = clean
     .split('\n')
     .map(collapseSpaces)

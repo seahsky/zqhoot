@@ -18,6 +18,23 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** UTF-8 size of `JSON.stringify(value)`, which is how API Gateway measures a WebSocket message. */
+export function jsonBytes(value: unknown): number {
+  const json = JSON.stringify(value);
+  let bytes = 0;
+  for (let i = 0; i < json.length; i++) {
+    const unit = json.charCodeAt(i);
+    if (unit < 0x80) bytes += 1;
+    else if (unit < 0x800) bytes += 2;
+    // JSON.stringify escapes lone surrogates, so a high one is always followed by its low half.
+    else if (unit >= 0xd800 && unit <= 0xdbff) {
+      bytes += 4;
+      i++;
+    } else bytes += 3;
+  }
+  return bytes;
+}
+
 const B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 function utf8Bytes(s: string): number[] {

@@ -32,7 +32,11 @@ This replaces a push per answer: 400 answers become about 15 polls, and the pres
 3. Load responses, players and the scoreboard. The engine computes the `QuestionResult` (host view), each player's `PlayerOutcome` (points, streak bonus, new total, rank, streak), the new scoreboard (`appliedThrough = i`), and the outbound messages.
 4. Write `RESULT#i`, SCORES (version-checked), then META `revealing → reveal`. If a step fails, META stays `revealing`. The next host command re-runs steps 3-4, and `appliedThrough` prevents double scoring.
 
-Player `reveal` messages carry the result with open-ended responses filtered to `visible`.
+Open-ended results are bounded so every message fits API Gateway's 128 KB limit (wave 1 gate finding G1):
+
+- **Host result** (stored `RESULT#i` and `host.state`): the newest `LIMITS.openRevealMax` (100) `visible` responses plus the newest 50 `pending`/`hidden` ones, with the rest counted in `omitted`. `host.state` may drop further old responses to stay within a 120 KB budget. Hosts reach every response through `host.stats` paging.
+- **Player `reveal`**: carries no open-ended responses (`responses: []`, `omitted` = number of visible responses). Phones never show other players' text. This also stops response IDs (which embed player IDs) from reaching players, where they could be matched to leaderboard nicknames (gate finding G5).
+- **`StoredQuestionResult.visibleResponses`**: keeps the exact visible count once the list is capped.
 
 ## Consequences
 

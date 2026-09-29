@@ -439,7 +439,7 @@ describeWithStores('idempotency and races', (make, kind) => {
           'visible',
         ]);
       }
-      // A player who resumes now gets both approved responses.
+      // A player who resumes now is told both responses are visible; they never receive the text.
       await h.send(h.cid('ann-new'), {
         type: 'resume',
         v: 1,
@@ -449,10 +449,7 @@ describeWithStores('idempotency and races', (make, kind) => {
       });
       const welcome = h.transport.last(h.cid('ann-new'), 'welcome');
       const result = welcome.role === 'player' ? welcome.snapshot.reveal?.result : undefined;
-      expect(result?.type === 'open' && result.responses.map((r) => r.text).sort()).toEqual([
-        'answer Ann',
-        'answer Bob',
-      ]);
+      expect(result).toMatchObject({ type: 'open', responses: [], omitted: 2 });
       expect(h.logger.entries.error).toEqual([]);
     });
 
@@ -477,11 +474,9 @@ describeWithStores('idempotency and races', (make, kind) => {
       expect(
         hostResult?.type === 'open' && hostResult.responses.map((r) => r.status).sort(),
       ).toEqual(['pending', 'visible']);
-      // Players get the approved response in their reveal, and a resume agrees with it.
+      // Players count the approved response in their reveal, and a resume agrees with it.
       const annSees = h.transport.last(g.players.Ann!.connectionId, 'reveal').result;
-      expect(annSees.type === 'open' && annSees.responses.map((r) => r.text)).toEqual([
-        'answer Ann',
-      ]);
+      expect(annSees).toMatchObject({ type: 'open', responses: [], omitted: 1 });
       await h.send(h.cid('bob-new'), {
         type: 'resume',
         v: 1,
@@ -491,9 +486,7 @@ describeWithStores('idempotency and races', (make, kind) => {
       });
       const welcome = h.transport.last(h.cid('bob-new'), 'welcome');
       const resumed = welcome.role === 'player' ? welcome.snapshot.reveal?.result : undefined;
-      expect(resumed?.type === 'open' && resumed.responses.map((r) => r.text)).toEqual([
-        'answer Ann',
-      ]);
+      expect(resumed).toMatchObject({ type: 'open', responses: [], omitted: 1 });
       expect(h.logger.entries.error).toEqual([]);
     });
 
@@ -515,7 +508,8 @@ describeWithStores('idempotency and races', (make, kind) => {
         hostResult?.type === 'open' && hostResult.responses.map((r) => r.status).sort(),
       ).toEqual(['pending', 'visible']);
       expect(h.transport.last(g.players.Ann!.connectionId, 'reveal').result).toMatchObject({
-        responses: [{ text: 'answer Bob' }],
+        responses: [],
+        omitted: 1,
       });
     });
 

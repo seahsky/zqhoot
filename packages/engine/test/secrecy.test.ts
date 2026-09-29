@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AnswerPayload, Question } from '@zqhoot/protocol';
 import {
   buildEnded,
+  computeReveal,
   buildLeaderboard,
   buildPlayerSnapshot,
   buildQuestionMessage,
@@ -9,6 +10,7 @@ import {
 } from '../src/index.ts';
 import type { ResponseRecord, SessionMeta } from '../src/index.ts';
 import {
+  NOW,
   Q,
   SETTINGS,
   board,
@@ -155,5 +157,93 @@ describe('secrecy in the other pre-reveal phases', () => {
     expect(JSON.stringify([snap, buildQuestionMessage(meta, hidden.snapshot)])).not.toContain(
       'Capital of France',
     );
+  });
+});
+
+describe('authorship of open-ended and word-cloud answers', () => {
+  const s = newSession();
+  const ps = [1, 2, 3, 4].map((n) => player(n, { nickname: `Nick${n}` }));
+  const words = ['apple', 'pear', 'plum', 'fig'];
+
+  const answers = (index: number) => {
+    const meta = openAtIndex(s, index);
+    return ps.map((p, i) =>
+      response(
+        meta,
+        p.playerId,
+        { kind: 'text', text: words[i] as string },
+        {
+          normalizedText: words[i] as string,
+          status: 'visible',
+        },
+      ),
+    );
+  };
+
+  describe.each([
+    { name: 'open-ended', index: Q.open },
+    { name: 'word cloud', index: Q.wordcloud },
+  ])('$name question', ({ index }) => {
+    const responses = answers(index);
+    const out = computeReveal({
+      meta: revealingAt(s, index),
+      snapshot: s.snapshot,
+      responses,
+      players: ps,
+      scoreboard: board({ [pid(1)]: { score: 900 }, [pid(2)]: { score: 800 } }, index - 1),
+      now: NOW + 99_000,
+    });
+    const resumed = (p: (typeof ps)[number]) =>
+      buildPlayerSnapshot({
+        meta: out.meta,
+        snapshot: s.snapshot,
+        player: p,
+        players: ps,
+        scoreboard: out.scoreboard,
+        responses: responses.filter((r) => r.playerId === p.playerId),
+        result: out.stored,
+      });
+
+    it("no reveal message contains another player's id", () => {
+      expect(out.playerMessages).toHaveLength(ps.length);
+      for (const { playerId, message } of out.playerMessages) {
+        const json = JSON.stringify(message);
+        for (const other of ps.filter((p) => p.playerId !== playerId)) {
+          expect(json, `${playerId} sees ${other.playerId}`).not.toContain(other.playerId);
+        }
+      }
+    });
+
+    it("no resumed snapshot contains another player's id in the result", () => {
+      for (const p of ps) {
+        const json = JSON.stringify(resumed(p).reveal?.result);
+        for (const other of ps.filter((o) => o.playerId !== p.playerId)) {
+          expect(json).not.toContain(other.playerId);
+        }
+      }
+    });
+  });
+
+  it('open-ended players get no response text at all', () => {
+    const out = computeReveal({
+      meta: revealingAt(s, Q.open),
+      snapshot: s.snapshot,
+      responses: answers(Q.open),
+      players: ps,
+      scoreboard: null,
+      now: NOW + 99_000,
+    });
+    for (const { message } of out.playerMessages) {
+      const json = JSON.stringify(message);
+      for (const word of words) expect(json).not.toContain(word);
+    }
+    // Hosts are trusted with authorship: moderation needs to know who wrote what.
+    const host = out.hostResult;
+    expect(host.type === 'open' && host.responses.map((r) => [r.nickname, r.text])).toEqual([
+      ['Nick1', 'apple'],
+      ['Nick2', 'pear'],
+      ['Nick3', 'plum'],
+      ['Nick4', 'fig'],
+    ]);
   });
 });

@@ -115,6 +115,74 @@ describe('normalizeOpenText', () => {
   });
 });
 
+describe('anti-Zalgo in word-cloud and open-ended entries', () => {
+  const ACUTE = cp(0x0301);
+  const CIRCUMFLEX = cp(0x0302);
+  const NUKTA = cp(0x093c);
+  const both = [
+    ['normalizeWord', normalizeWord],
+    ['normalizeOpenText', normalizeOpenText],
+  ] as const;
+
+  describe.each(both)('%s', (_name, normalize) => {
+    it('allows up to three non-spacing marks on one base', () => {
+      expect(normalize(`a${ACUTE}${CIRCUMFLEX}b`)).not.toBeNull();
+      expect(normalize(`a${ACUTE.repeat(3)}b`)).not.toBeNull();
+    });
+
+    it('rejects four or more', () => {
+      expect(normalize(`a${ACUTE.repeat(4)}b`)).toBeNull();
+      expect(normalize(`ab${ACUTE.repeat(30)}`)).toBeNull();
+    });
+
+    it('counts marks per base, not per entry', () => {
+      expect(normalize(`a${ACUTE}${CIRCUMFLEX}b${ACUTE}${CIRCUMFLEX}`)).not.toBeNull();
+    });
+
+    it('counts marks on a precomposed base and across removed invisible characters', () => {
+      // U+00E1 is a + acute, so this is four marks once decomposed.
+      expect(normalize(`${cp(0xe1)}${CIRCUMFLEX}${ACUTE}${ACUTE}b`)).toBeNull();
+      expect(normalize(`a${ACUTE}${ZWSP}${ACUTE}${ZWSP}${ACUTE}${ZWSP}${ACUTE}`)).toBeNull();
+    });
+
+    it('rejects stacked marks in a script whose graphemes are long', () => {
+      expect(normalize(`${cp(0x0915)}${NUKTA.repeat(4)}${cp(0x0937)}`)).toBeNull();
+    });
+
+    // Same words as the nickname tests: a per-grapheme count would reject these.
+    it.each([
+      ['Hindi Lakshmi', 'लक्ष्मी'],
+      ['Bengali Lakshmi', 'লক্ষ্মী'],
+      ['Devanagari Krishna', 'कृष्ण'],
+      ['Tamil', 'தமிழ்'],
+      ['Thai', 'สวัสดี'],
+      ['Vietnamese with two marks per letter', 'Nguyễn Hậu'],
+      ['Arabic with shadda and vowel', 'محمّد'],
+      ['Bengali nukta with split vowel', 'বড়ো'],
+      ['Hindi nukta, vowel and anusvara', 'चीज़ें'],
+    ])('accepts %s', (_label, raw) => {
+      const out = normalize(raw);
+      expect(out).not.toBeNull();
+      expect(out?.normalize('NFKC').toLowerCase()).toBe(raw.normalize('NFKC').toLowerCase());
+    });
+  });
+
+  it('rejects Zalgo on any line of a multi-line entry', () => {
+    expect(
+      normalizeOpenText(`fine
+z${ACUTE.repeat(4)}algo`),
+    ).toBeNull();
+    expect(
+      normalizeOpenText(`fine
+z${ACUTE.repeat(3)}algo`),
+    ).not.toBeNull();
+  });
+
+  it('does not let a following word inherit the marks of the last one', () => {
+    expect(normalizeWord(`a${ACUTE.repeat(3)} b${ACUTE.repeat(3)}`)).not.toBeNull();
+  });
+});
+
 describe('sanitize', () => {
   it('turns the braille blank into the space it looks like', () => {
     expect(sanitize(`a${BRAILLE_BLANK}b`, { bidi: 'reject' })).toBe('a b');

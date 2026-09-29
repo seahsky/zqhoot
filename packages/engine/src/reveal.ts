@@ -5,6 +5,7 @@ import {
   optionCounts,
   ratingStats,
   tally,
+  visibleCount,
   wordCounts,
 } from './aggregate.ts';
 import type { Tally } from './aggregate.ts';
@@ -54,21 +55,23 @@ function buildResult(q: Question, t: Tally): QuestionResult {
     case 'wordcloud':
       return { type: 'wordcloud', ...head, words: wordCounts(t) };
     case 'open':
-      return { type: 'open', ...head, responses: openViews(t) };
+      return { type: 'open', ...head, ...openViews(t) };
     case 'rating':
       return { type: 'rating', ...head, ...ratingStats(q, t) };
   }
 }
 
-/** Open-ended: only moderated-visible entries and no nicknames. Everything else is already public. */
-export function toPlayerResult(result: QuestionResult): QuestionResult {
+/**
+ * Open-ended answers are anonymous and phones do not render them, so a player gets none: only
+ * how many were visible to the room. Their ids embed the author's playerId, which the leaderboard
+ * maps to a nickname, so sending them would unmask authors. Everything else is already public.
+ * `visibleResponses` is the total from the stored result; the host view lists only the newest.
+ */
+export function toPlayerResult(result: QuestionResult, visibleResponses?: number): QuestionResult {
   if (result.type !== 'open') return result;
-  return {
-    ...result,
-    responses: result.responses
-      .filter((r) => r.status === 'visible')
-      .map(({ nickname: _nickname, ...rest }) => rest),
-  };
+  const { responses, omitted: _omitted, ...head } = result;
+  const visible = visibleResponses ?? responses.filter((r) => r.status === 'visible').length;
+  return { ...head, responses: [], omitted: visible };
 }
 
 /**
@@ -90,7 +93,11 @@ export function refreshModeration(i: {
   );
   switch (stored.result.type) {
     case 'open':
-      return { ...stored, result: { ...stored.result, responses: openViews(t) } };
+      return {
+        ...stored,
+        result: { ...stored.result, ...openViews(t) },
+        visibleResponses: visibleCount(t),
+      };
     case 'wordcloud':
       return { ...stored, result: { ...stored.result, words: wordCounts(t) } };
     default:
@@ -100,12 +107,11 @@ export function refreshModeration(i: {
 
 function revealMessages(
   version: number,
-  questionIndex: number,
-  hostResult: QuestionResult,
-  outcomes: Record<string, PlayerOutcome>,
+  stored: StoredQuestionResult,
   players: PlayerRecord[],
 ): PlayerMessage[] {
-  const result = toPlayerResult(hostResult);
+  const { questionIndex, outcomes } = stored;
+  const result = toPlayerResult(stored.result, stored.visibleResponses);
   const messages: PlayerMessage[] = [];
   for (const p of players) {
     const you = outcomes[p.playerId];
@@ -209,16 +215,18 @@ export function computeReveal(i: {
   }
 
   const newMeta: SessionMeta = { ...meta, phase: 'reveal', version: meta.version + 1 };
+  const stored: StoredQuestionResult = {
+    sessionId: meta.sessionId,
+    questionIndex: qi,
+    closedAt: meta.closedAt ?? i.now,
+    computedAt: i.now,
+    result: hostResult,
+    outcomes,
+  };
+  if (q.type === 'open') stored.visibleResponses = visibleCount(t);
   return {
     meta: newMeta,
-    stored: {
-      sessionId: meta.sessionId,
-      questionIndex: qi,
-      closedAt: meta.closedAt ?? i.now,
-      computedAt: i.now,
-      result: hostResult,
-      outcomes,
-    },
+    stored,
     scoreboard: {
       sessionId: meta.sessionId,
       version: (i.scoreboard?.version ?? 0) + 1,
@@ -226,7 +234,7 @@ export function computeReveal(i: {
       players: next,
     },
     hostResult,
-    playerMessages: revealMessages(newMeta.version, qi, hostResult, outcomes, players),
+    playerMessages: revealMessages(newMeta.version, stored, players),
   };
 }
 
@@ -250,12 +258,6 @@ export function revealFromStored(i: {
   return {
     meta: newMeta,
     hostResult: stored.result,
-    playerMessages: revealMessages(
-      newMeta.version,
-      stored.questionIndex,
-      stored.result,
-      stored.outcomes,
-      i.players,
-    ),
+    playerMessages: revealMessages(newMeta.version, stored, i.players),
   };
 }

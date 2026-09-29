@@ -83,8 +83,9 @@ export const OpenResponseView = z.object({
 export type OpenResponseView = z.infer<typeof OpenResponseView>;
 
 /**
- * Outcome of a closed question. Hosts receive open-ended responses of every status;
- * players and the presenter-safe subset contain only `visible` ones.
+ * Outcome of a closed question. Hosts receive open-ended responses of every status, bounded;
+ * players receive none (only the count of visible ones in `omitted`), because responses are
+ * anonymous and phones do not render them.
  */
 export const QuestionResult = z.discriminatedUnion('type', [
   z.object({
@@ -105,7 +106,23 @@ export const QuestionResult = z.discriminatedUnion('type', [
     counts: z.record(z.string(), z.number().int()),
   }),
   z.object({ type: z.literal('wordcloud'), ...resultCounts, words: z.array(WordCount) }),
-  z.object({ type: z.literal('open'), ...resultCounts, responses: z.array(OpenResponseView) }),
+  z.object({
+    type: z.literal('open'),
+    ...resultCounts,
+    /**
+     * Host views hold the newest `LIMITS.openRevealMax` visible responses and a bounded number
+     * of pending/hidden ones, oldest first; player views hold none. The list in a `host.state`
+     * snapshot can be shorter still (the oldest responses of any status are dropped so the
+     * message fits one WebSocket frame), so a host cannot assume the moderation queue is
+     * complete there; it can page through `host.stats` for the rest.
+     */
+    responses: z.array(OpenResponseView),
+    /**
+     * Responses not included in `responses`. For players, the count of visible responses.
+     * Absent means none.
+     */
+    omitted: z.number().int().min(0).optional(),
+  }),
   z.object({
     type: z.literal('rating'),
     ...resultCounts,
@@ -235,7 +252,14 @@ export const PlayerSnapshot = z.object({
   /** What this player has already submitted for the current question. */
   responses: z.array(AnswerPayload).optional(),
   /** Present in phase reveal. */
-  reveal: z.object({ result: QuestionResult, you: PlayerOutcome }).optional(),
+  reveal: z
+    .object({
+      result: QuestionResult,
+      you: PlayerOutcome,
+      /** The question just closed, so a player resuming here can show what was asked and the answer. */
+      question: PublicQuestion.optional(),
+    })
+    .optional(),
   /** Present in phase leaderboard. */
   leaderboard: z.object({ entries: z.array(LeaderboardEntry), you: PlayerStanding }).optional(),
   /** Present in phase ended. */

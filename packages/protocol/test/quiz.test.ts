@@ -321,6 +321,7 @@ describe('limits at their exact boundaries', () => {
       podiumSize: 3,
       wordCloudTopN: 60,
       statsResponsesPage: 100,
+      openRevealMax: 100,
     });
   });
 });

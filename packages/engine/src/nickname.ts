@@ -1,13 +1,9 @@
 import { LIMITS } from '@zqhoot/protocol';
-import { containsProfanity, sanitize } from './text.ts';
+import { containsProfanity, hasStackedMarks, sanitize } from './text.ts';
 
 export type NicknameResult =
   | { ok: true; nickname: string; key: string }
   | { ok: false; reason: 'too-short' | 'too-long' | 'invalid-characters' | 'inappropriate' };
-
-const MAX_MARKS_PER_BASE = 3;
-/** VS16 and the keycap enclosing mark are part of ordinary emoji, not decoration. */
-const NOT_DECORATION = new Set(['\uFE0F', '\u20E3']);
 
 const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
 
@@ -81,25 +77,6 @@ export function nicknameKey(nickname: string): string {
   return leet.replace(DROPPED_IN_KEY, '');
 }
 
-/**
- * Anti-Zalgo: more than two combining marks in a row on one base. The run is counted instead of
- * the marks per grapheme cluster because segmentation rule GB9c makes an Indic conjunct such as
- * the क्ष्मी in Lakshmi a single cluster, although it holds only one mark after each base.
- * Stacked diacritics are still caught: they are consecutive marks on one base.
- */
-function hasZalgo(name: string): boolean {
-  let run = 0;
-  // Decomposed, so a precomposed base (a + acute = U+00E1) cannot hide one of the marks.
-  for (const ch of name.normalize('NFD')) {
-    // Spacing marks (Mc) take their own width and cannot stack, so only Mn/Me count; this keeps
-    // Bengali split vowels (ো = U+09C7 U+09BE) and Hindi nukta + vowel + anusvara valid.
-    if (!/\p{M}/u.test(ch)) run = 0;
-    else if (/[\p{Mn}\p{Me}]/u.test(ch) && !NOT_DECORATION.has(ch) && ++run > MAX_MARKS_PER_BASE)
-      return true;
-  }
-  return false;
-}
-
 const graphemeCount = (name: string) => Array.from(segmenter.segment(name)).length;
 
 export function normalizeNickname(raw: string): NicknameResult {
@@ -107,7 +84,7 @@ export function normalizeNickname(raw: string): NicknameResult {
   const clean = sanitize(raw, { bidi: 'reject' });
   if (clean === null) return { ok: false, reason: 'invalid-characters' };
   const nickname = clean.replace(/\p{Zs}+/gu, ' ').trim();
-  if (hasZalgo(nickname)) return { ok: false, reason: 'invalid-characters' };
+  if (hasStackedMarks(nickname)) return { ok: false, reason: 'invalid-characters' };
   const length = graphemeCount(nickname);
   if (length < LIMITS.nicknameMinGraphemes) return { ok: false, reason: 'too-short' };
   if (length > LIMITS.nicknameMaxGraphemes) return { ok: false, reason: 'too-long' };

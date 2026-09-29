@@ -100,8 +100,15 @@ export function compareByArrival(
   return a.receivedAt - b.receivedAt || compareCodePoints(a.id, b.id);
 }
 
-/** Host view: every status, with nicknames, oldest first. */
-export function openViews(t: Tally): OpenResponseView[] {
+export function visibleCount(t: Tally): number {
+  return t.responses.filter((r) => r.status === 'visible').length;
+}
+
+/** Pending and hidden responses a host result carries, so the moderation view keeps working. */
+export const MODERATION_QUEUE_MAX = 50;
+
+/** Host view: every status, with nicknames, oldest first. Unbounded, so callers page it. */
+export function allOpenViews(t: Tally): OpenResponseView[] {
   return t.responses
     .map((r) => {
       const view: OpenResponseView = {
@@ -115,6 +122,28 @@ export function openViews(t: Tally): OpenResponseView[] {
       return view;
     })
     .sort(compareByArrival);
+}
+
+/**
+ * Host view of a closed question's open-ended responses, oldest first. Bounded so the result
+ * fits the 128 KB WebSocket message limit at 500 players: the newest `openRevealMax` visible
+ * responses plus the newest `MODERATION_QUEUE_MAX` pending or hidden ones. `omitted` counts the rest.
+ */
+export function openViews(t: Tally): { responses: OpenResponseView[]; omitted: number } {
+  const all = allOpenViews(t);
+  const kept: OpenResponseView[] = [];
+  let visible = 0;
+  let queued = 0;
+  for (let i = all.length - 1; i >= 0; i--) {
+    const view = all[i] as OpenResponseView;
+    if (view.status === 'visible') {
+      if (visible++ >= LIMITS.openRevealMax) continue;
+    } else if (queued++ >= MODERATION_QUEUE_MAX) {
+      continue;
+    }
+    kept.push(view);
+  }
+  return { responses: kept.reverse(), omitted: all.length - kept.length };
 }
 
 export function ratingStats(

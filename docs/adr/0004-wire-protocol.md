@@ -53,5 +53,9 @@ Server → client (every message carries `ts`):
 - **Answer secrecy.** Before reveal, a correct answer appears only in `host.state` / host `welcome` (to authenticated host connections). Players only ever receive `PublicQuestion`, produced by `toPublicQuestion()` in the engine, which has a test asserting no answer fields survive.
 - **Level-triggered state.** `question`, `reveal`, `leaderboard`, `ended` and snapshots carry `sv` (session meta version). Clients drop state messages whose `sv` is lower than the last one applied. That removes ordering problems between concurrent invocations without sequence numbers or replay buffers.
 - **`ts` per recipient.** The transport stamps `ts` immediately before each send. Clients use it for clock alignment ([ADR-0005](0005-timing-fairness-scoring.md)).
-- **Size.** Client messages are capped at 4 KB (`LIMITS.clientMessageMaxBytes`). API Gateway's frame limit is 32 KB and message limit 128 KB. The largest server message, a host snapshot with a 400-name roster, is about 20 KB.
+- **Size.** Client messages are capped at 4 KB (`LIMITS.clientMessageMaxBytes`). API Gateway's frame limit is 32 KB and its message limit is 128 KB.
+  - The largest server messages are host snapshots (`welcome`/`host.state`). The roster alone takes about 100-130 KB at 500 players with long nicknames, measured in UTF-8 bytes.
+  - Two bounds keep every server message under 128 KB, and the engine's size tests (`packages/engine/test/size.test.ts`) enforce them at 500 players:
+    - Nicknames have a UTF-8 byte cap (G5 follow-up).
+    - Open-ended results are capped (`LIMITS.openRevealMax`, and a byte budget for `host.state`; see ADR-0006).
 - **Unknown or invalid messages** get `error {code:'bad-request'}` and count toward the connection's rate limit.

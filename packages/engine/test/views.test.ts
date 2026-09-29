@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HostSnapshot, LIMITS, LiveStats, PlayerSnapshot } from '@zqhoot/protocol';
-import type { AnswerPayload } from '@zqhoot/protocol';
+import type { AnswerPayload, OpenResponseView, Question, QuizSettings } from '@zqhoot/protocol';
 import {
   buildEnded,
   buildHostSnapshot,
@@ -10,6 +10,7 @@ import {
   buildRoster,
   computeLiveStats,
   computeReveal,
+  toPublicQuestion,
 } from '../src/index.ts';
 import type {
   PlayerRecord,
@@ -921,5 +922,146 @@ describe('computeLiveStats', () => {
       ]);
       expect(out).toMatchObject({ answered: 2, totalPlayers: 2 });
     });
+  });
+});
+
+describe('player snapshot in reveal carries the public question', () => {
+  const me = roster()[0] as PlayerRecord;
+  const everyQuestion = questions().map((q, index) => ({ type: q.type, index, q }));
+
+  const resumeInReveal = (index: number, settings?: Partial<QuizSettings>) => {
+    const session = settings === undefined ? s : newSession(undefined, settings);
+    const out = computeReveal({
+      meta: revealingAt(session, index),
+      snapshot: session.snapshot,
+      responses: [],
+      players: roster(),
+      scoreboard: null,
+      now: NOW + 50_000,
+    });
+    const snap = buildPlayerSnapshot({
+      meta: out.meta,
+      snapshot: session.snapshot,
+      player: me,
+      players: roster(),
+      scoreboard: out.scoreboard,
+      responses: [],
+      result: out.stored,
+    });
+    return { snap, session };
+  };
+
+  it.each(everyQuestion)('for a $type question (#$index)', ({ index, q }) => {
+    const { snap, session } = resumeInReveal(index);
+    expect(PlayerSnapshot.safeParse(snap).success).toBe(true);
+    expect(snap.reveal?.question).toEqual(
+      toPublicQuestion(q as Question, session.snapshot.settings),
+    );
+    const json = JSON.stringify(snap.reveal?.question);
+    for (const key of ['"correctOptionId"', '"correct"', '"requireApproval"']) {
+      expect(json).not.toContain(key);
+    }
+  });
+
+  it('lets a phone show the correct single-choice option after a resume', () => {
+    const { snap } = resumeInReveal(Q.single);
+    const result = snap.reveal?.result;
+    const question = snap.reveal?.question;
+    if (result?.type !== 'single' || question?.type !== 'single') throw new Error('type');
+    expect(question.options.find((o) => o.id === result.correctOptionId)?.text).toBe('Paris');
+  });
+
+  it('follows the quiz setting that hides question text on devices', () => {
+    const { snap } = resumeInReveal(Q.single, { showQuestionOnDevices: false });
+    expect(snap.reveal?.question).not.toHaveProperty('prompt');
+    expect(JSON.stringify(snap)).not.toContain('Capital of France');
+  });
+
+  it('is absent outside the reveal phase', () => {
+    const { snap } = resumeInReveal(Q.single);
+    expect(snap.question).toBeUndefined();
+    const open = buildPlayerSnapshot({
+      meta: openAtIndex(s, Q.single),
+      snapshot: s.snapshot,
+      player: me,
+      players: roster(),
+      scoreboard: null,
+      responses: [],
+      result: null,
+    });
+    expect(open.reveal).toBeUndefined();
+  });
+});
+
+describe('host snapshot in reveal fits one WebSocket message', () => {
+  const revealMeta = { ...revealingAt(s, Q.open), phase: 'reveal' as const };
+  const stored = (responses: OpenResponseView[], omitted?: number): StoredQuestionResult => ({
+    sessionId: 'sess-0001',
+    questionIndex: Q.open,
+    closedAt: 1,
+    computedAt: 2,
+    result: {
+      type: 'open',
+      answered: responses.length,
+      totalPlayers: 4,
+      responses,
+      ...(omitted === undefined ? {} : { omitted }),
+    },
+    outcomes: {},
+  });
+  const views = (n: number, chars: number): OpenResponseView[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `player-${String(i).padStart(3, '0')}-0`,
+      text: 'x'.repeat(chars),
+      status: 'visible' as const,
+      nickname: 'Nick',
+      receivedAt: NOW + i,
+    }));
+  const build = (result: StoredQuestionResult, players: PlayerRecord[] = roster()) =>
+    buildHostSnapshot({
+      meta: revealMeta,
+      snapshot: s.snapshot,
+      players,
+      connectedPlayerIds: new Set(),
+      scoreboard: null,
+      result,
+    });
+  const shown = (snap: ReturnType<typeof build>) => {
+    if (snap.result?.type !== 'open') throw new Error('type');
+    return snap.result;
+  };
+
+  it('passes a result that fits through untouched', () => {
+    const result = stored(views(100, 200));
+    expect(build(result).result).toBe(result.result);
+  });
+
+  it('drops the oldest responses of an oversize result and counts them as omitted', () => {
+    const result = stored(views(150, 1000), 7);
+    const snap = build(result);
+    const out = shown(snap);
+    expect(out.responses.length).toBeGreaterThan(0);
+    expect(out.responses.length).toBeLessThan(150);
+    expect(out.responses.length + (out.omitted ?? 0)).toBe(157);
+    expect(out.responses.at(-1)?.id).toBe('player-149-0');
+    expect(Buffer.byteLength(JSON.stringify({ type: 'host.state', snapshot: snap }))).toBeLessThan(
+      128 * 1024,
+    );
+    expect(HostSnapshot.safeParse(snap).success).toBe(true);
+  });
+
+  it('counts omitted from zero when the stored result has no count', () => {
+    const out = shown(build(stored(views(150, 1000))));
+    expect(out.responses.length + (out.omitted ?? 0)).toBe(150);
+  });
+
+  it('shows nothing when the roster alone takes the whole message', () => {
+    // Longer than any accepted nickname, so the roster is over budget by itself.
+    const crowd = Array.from({ length: 500 }, (_, i) =>
+      player(i + 1, { nickname: 'x'.repeat(300) }),
+    );
+    const out = shown(build(stored(views(5, 100)), crowd));
+    expect(out.responses).toEqual([]);
+    expect(out.omitted).toBe(5);
   });
 });

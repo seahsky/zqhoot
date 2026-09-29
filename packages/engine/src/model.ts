@@ -132,6 +132,11 @@ export interface StoredQuestionResult {
   computedAt: number;
   /** Host view (all moderation statuses). */
   result: QuestionResult;
+  /**
+   * Open-ended questions only: how many responses are visible. `result` lists just the newest
+   * ones, so this is the only exact total; players receive it as `omitted`.
+   */
+  visibleResponses?: number;
   /** Per-player outcome, so a player resuming during reveal gets their own result. */
   outcomes: Record<string, PlayerOutcome>;
 }

@@ -455,14 +455,24 @@ describeWithStores('full game scenario', (make) => {
     expect(h.transport.ofType(control, 'host.state')).toHaveLength(stateCount);
     await h.send(control, { type: 'host.close', questionIndex: 4, reason: 'manual' });
     const openResult = (nick: string) => h.transport.last(conn[nick]!, 'reveal').result;
+    // Answers are anonymous and phones do not render them, so no player receives any response,
+    // only how many were shown to the room. Their ids would name the author.
     expect(openResult('Dee')).toEqual({
       type: 'open',
       answered: 3,
       totalPlayers: 11,
-      responses: [
-        { id: `${playerId.Ann}-0`, text: 'Great quiz', status: 'visible', receivedAt: t4 + 1000 },
-      ],
+      responses: [],
+      omitted: 1,
     });
+    // Every player still in the game, not the kicked one, whose last reveal is an earlier question.
+    for (const nick of Object.keys(conn).filter((n) => n !== 'Liv')) {
+      const shown = openResult(nick);
+      expect(shown.type === 'open' && shown.responses, nick).toEqual([]);
+      const json = JSON.stringify(h.transport.last(conn[nick]!, 'reveal'));
+      for (const [other, id] of Object.entries(playerId)) {
+        if (other !== nick) expect(json, `${nick} sees ${other}`).not.toContain(id);
+      }
+    }
     const hostOpen = hostState().result;
     expect(hostOpen?.type === 'open' && hostOpen.responses.map((r) => r.status)).toEqual([
       'visible',
@@ -491,7 +501,8 @@ describeWithStores('full game scenario', (make) => {
     expect(
       stored4?.result.type === 'open' && stored4.result.responses.map((r) => r.status),
     ).toEqual(['visible', 'hidden', 'visible', 'pending']);
-    // Eve reconnects (her old socket stays registered): the snapshot shows what players may see.
+    // Eve reconnects (her old socket stays registered): the snapshot has the count of what the room
+    // saw and the question, so the phone can show the reveal without an earlier `question` message.
     conn.EveOld = conn.Eve!;
     conn.Eve = h.cid('eve-2');
     await h.send(conn.Eve, {
@@ -504,12 +515,15 @@ describeWithStores('full game scenario', (make) => {
     const eveWelcome = h.transport.last(conn.Eve, 'welcome');
     expect(eveWelcome.role === 'player' && eveWelcome.snapshot.reveal?.result).toMatchObject({
       type: 'open',
-      responses: [
-        { text: 'Great quiz', status: 'visible' },
-        { text: 'Loved it', status: 'visible' },
-      ],
+      responses: [],
+      omitted: 2,
+    });
+    expect(eveWelcome.role === 'player' && eveWelcome.snapshot.reveal?.question).toMatchObject({
+      type: 'open',
+      maxEntries: 2,
     });
     expect(JSON.stringify(eveWelcome)).not.toContain('nickname":"Bob');
+    expect(JSON.stringify(eveWelcome)).not.toContain('Great quiz');
 
     // ---- Question 6: rating, closed by the VM timer --------------------------------------
     await next('reveal', 4);

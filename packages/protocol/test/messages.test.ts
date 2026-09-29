@@ -19,6 +19,7 @@ import {
   outcome,
   playerSnapshot,
   publicQuestion,
+  revealSnapshot,
   singleResult,
 } from './fixtures.ts';
 
@@ -257,9 +258,28 @@ const serverCases: Record<ServerMessageType, Cases> = {
         snapshot: playerSnapshot,
       },
       { type: 'welcome', ts, role: 'player', snapshot: playerSnapshot },
+      { type: 'welcome', ts, role: 'player', snapshot: revealSnapshot },
+      {
+        type: 'welcome',
+        ts,
+        role: 'player',
+        snapshot: { ...revealSnapshot, reveal: { ...revealSnapshot.reveal, question: undefined } },
+      },
       { type: 'welcome', ts, role: 'host', snapshot: hostSnapshot },
     ],
     invalid: [
+      [
+        'reveal question that is not a public question',
+        {
+          type: 'welcome',
+          ts,
+          role: 'player',
+          snapshot: {
+            ...revealSnapshot,
+            reveal: { ...revealSnapshot.reveal, question: { ...fullQuestion, type: 'essay' } },
+          },
+        },
+      ],
       ['unknown role', { type: 'welcome', ts, role: 'spectator', snapshot: playerSnapshot }],
       [
         'host role with a player snapshot',
@@ -483,9 +503,48 @@ const serverCases: Record<ServerMessageType, Cases> = {
         result: singleResult,
         you: { ...outcome, correct: undefined, rank: null },
       },
+      // Players get no responses, only how many were visible; hosts may omit the count.
+      {
+        type: 'reveal',
+        ts,
+        sv: 5,
+        index: 0,
+        result: { type: 'open', answered: 2, totalPlayers: 4, responses: [], omitted: 2 },
+        you: outcome,
+      },
+      {
+        type: 'reveal',
+        ts,
+        sv: 5,
+        index: 0,
+        result: { type: 'open', answered: 2, totalPlayers: 4, responses: [] },
+        you: outcome,
+      },
     ],
     invalid: [
       ['missing you', { type: 'reveal', ts, sv: 5, index: 0, result: singleResult }],
+      [
+        'negative omitted count',
+        {
+          type: 'reveal',
+          ts,
+          sv: 5,
+          index: 0,
+          result: { type: 'open', answered: 2, totalPlayers: 4, responses: [], omitted: -1 },
+          you: outcome,
+        },
+      ],
+      [
+        'fractional omitted count',
+        {
+          type: 'reveal',
+          ts,
+          sv: 5,
+          index: 0,
+          result: { type: 'open', answered: 2, totalPlayers: 4, responses: [], omitted: 1.5 },
+          you: outcome,
+        },
+      ],
       [
         'single result without the answer',
         {

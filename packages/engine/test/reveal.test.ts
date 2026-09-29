@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LIMITS } from '@zqhoot/protocol';
 import type { AnswerPayload, QuestionResult } from '@zqhoot/protocol';
 import {
   computeReveal,
@@ -593,6 +594,7 @@ describe('computeReveal: result by question type', () => {
         type: 'open',
         answered: 4,
         totalPlayers: 4,
+        omitted: 0,
         responses: [
           {
             id: 'player-01-0',
@@ -626,20 +628,25 @@ describe('computeReveal: result by question type', () => {
       });
     });
 
-    it('gives players only visible responses and no nicknames', () => {
-      const [first] = out.playerMessages;
-      if (first?.message.type !== 'reveal') throw new Error('type');
-      expect(first.message.result).toEqual({
-        type: 'open',
-        answered: 4,
-        totalPlayers: 4,
-        responses: [
-          { id: 'player-02-0', text: 'second', status: 'visible', receivedAt: NOW + 5000 },
-          { id: 'player-04-0', text: 'tie a', status: 'visible', receivedAt: NOW + 6000 },
-        ],
-      });
-      expect(JSON.stringify(first.message)).not.toContain('nickname');
-      expect(JSON.stringify(first.message)).not.toContain('first');
+    it('remembers how many responses are visible, for players', () => {
+      expect(out.stored.visibleResponses).toBe(2);
+    });
+
+    it('gives players no responses, only how many were visible', () => {
+      for (const { message } of out.playerMessages) {
+        if (message.type !== 'reveal') throw new Error('type');
+        expect(message.result).toEqual({
+          type: 'open',
+          answered: 4,
+          totalPlayers: 4,
+          responses: [],
+          omitted: 2,
+        });
+        const json = JSON.stringify(message);
+        for (const secret of ['nickname', 'first', 'second', 'tie a', 'player-0']) {
+          expect(json).not.toContain(secret);
+        }
+      }
     });
   });
 });
@@ -668,7 +675,7 @@ describe('toPlayerResult', () => {
     for (const r of results) expect(toPlayerResult(r)).toEqual(r);
   });
 
-  it('filters open-ended responses to visible ones and drops nicknames without mutating the input', () => {
+  it('drops every open-ended response and counts the visible ones without mutating the input', () => {
     const host: QuestionResult = {
       type: 'open',
       answered: 3,
@@ -678,15 +685,29 @@ describe('toPlayerResult', () => {
         { id: 'r-000002', text: 'b', status: 'pending', nickname: 'Bob', receivedAt: 2 },
         { id: 'r-000003', text: 'c', status: 'hidden', nickname: 'Cara', receivedAt: 3 },
       ],
+      omitted: 4,
     };
     const before = JSON.stringify(host);
     expect(toPlayerResult(host)).toEqual({
       type: 'open',
       answered: 3,
       totalPlayers: 3,
-      responses: [{ id: 'r-000001', text: 'a', status: 'visible', receivedAt: 1 }],
+      responses: [],
+      omitted: 1,
     });
     expect(JSON.stringify(host)).toBe(before);
+  });
+
+  it('prefers the stored total of visible responses when the host view was capped', () => {
+    const host: QuestionResult = {
+      type: 'open',
+      answered: 3,
+      totalPlayers: 3,
+      responses: [{ id: 'r-000001', text: 'a', status: 'visible', receivedAt: 1 }],
+      omitted: 40,
+    };
+    expect(toPlayerResult(host, 37)).toMatchObject({ responses: [], omitted: 37 });
+    expect(toPlayerResult(host, 0)).toMatchObject({ responses: [], omitted: 0 });
   });
 });
 
@@ -820,8 +841,10 @@ describe('refreshModeration', () => {
     const out = refreshModeration({ stored, players: players(), responses: after });
     expect(out).toEqual({
       ...stored,
+      visibleResponses: 1,
       result: {
         ...stored.result,
+        omitted: 0,
         responses: [
           expect.objectContaining({ id: 'player-01-0', status: 'visible', nickname: 'Alice' }),
           expect.objectContaining({ id: 'player-02-0', status: 'pending', nickname: 'Bob' }),
@@ -881,5 +904,115 @@ describe('refreshModeration', () => {
   it('returns null for question types with nothing to moderate', () => {
     const stored = reveal(s, Q.poll, play(s, Q.poll, [[1, choice('opt-red'), 0]])).stored;
     expect(refreshModeration({ stored, players: players(), responses: [] })).toBeNull();
+  });
+});
+
+describe('open-ended results are bounded', () => {
+  const meta = openAtIndex(s, Q.open);
+  const crowd = Array.from({ length: 300 }, (_, i) => player(i + 1, { nickname: `Nick${i + 1}` }));
+  const answer = (no: number, status: ResponseRecord['status'], receivedAt = NOW + no * 10) =>
+    response(meta, pid(no), text(`answer ${no}`), {
+      normalizedText: `answer ${no}`,
+      status,
+      receivedAt,
+    });
+  const statusOf = (no: number): ResponseRecord['status'] =>
+    no % 5 === 0 ? 'hidden' : no % 3 === 0 ? 'pending' : 'visible';
+  const responses = crowd.map((p, i) => answer(i + 1, statusOf(i + 1)));
+  const count = (status: 'visible' | 'other') =>
+    responses.filter((r) => (r.status === 'visible') === (status === 'visible')).length;
+
+  const revealCrowd = (rs: ResponseRecord[] = responses, ps: PlayerRecord[] = crowd) =>
+    computeReveal({
+      meta: revealingAt(s, Q.open),
+      snapshot: s.snapshot,
+      responses: rs,
+      players: ps,
+      scoreboard: null,
+      now: NOW + 99_000,
+    });
+
+  const openResult = (result: QuestionResult) => {
+    if (result.type !== 'open') throw new Error('type');
+    return result;
+  };
+
+  it('keeps the newest visible responses and the newest 50 pending or hidden ones', () => {
+    expect(count('visible')).toBeGreaterThan(LIMITS.openRevealMax);
+    expect(count('other')).toBeGreaterThan(50);
+    const host = openResult(revealCrowd().hostResult);
+    const newest = (visible: boolean, n: number) =>
+      responses
+        .filter((r) => (r.status === 'visible') === visible)
+        .sort((a, b) => b.receivedAt - a.receivedAt)
+        .slice(0, n)
+        .map((r) => r.responseId);
+    expect(
+      host.responses
+        .filter((r) => r.status === 'visible')
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual(newest(true, LIMITS.openRevealMax).sort());
+    expect(
+      host.responses
+        .filter((r) => r.status !== 'visible')
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual(newest(false, 50).sort());
+    expect(host.omitted).toBe(responses.length - LIMITS.openRevealMax - 50);
+    const times = host.responses.map((r) => r.receivedAt);
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+  });
+
+  it('breaks receivedAt ties by response id when choosing the newest', () => {
+    const tied = crowd.map((p, i) => answer(i + 1, 'visible', NOW));
+    const host = openResult(revealCrowd(tied).hostResult);
+    const ids = tied.map((r) => r.responseId).sort();
+    expect(host.responses.map((r) => r.id)).toEqual(ids.slice(ids.length - LIMITS.openRevealMax));
+  });
+
+  it('leaves small results whole, with nothing omitted', () => {
+    const host = openResult(revealCrowd(responses.slice(0, 20)).hostResult);
+    expect(host.responses).toHaveLength(20);
+    expect(host.omitted).toBe(0);
+  });
+
+  it('does not count kicked players toward the total', () => {
+    const ps = crowd.map((p, i) => (i < 10 ? { ...p, kicked: true } : p));
+    const host = openResult(revealCrowd(responses.slice(0, 40), ps).hostResult);
+    expect(host.responses).toHaveLength(30);
+    expect(host.omitted).toBe(0);
+  });
+
+  it('tells every player the exact number of visible responses, not their text', () => {
+    const out = revealCrowd();
+    expect(out.stored.visibleResponses).toBe(count('visible'));
+    expect(out.playerMessages).toHaveLength(crowd.length);
+    for (const { message } of out.playerMessages) {
+      if (message.type !== 'reveal') throw new Error('type');
+      expect(message.result).toMatchObject({ responses: [], omitted: count('visible') });
+    }
+    const again = revealFromStored({
+      meta: revealingAt(s, Q.open),
+      stored: out.stored,
+      players: crowd,
+    });
+    const [first] = again.playerMessages;
+    expect(first?.message).toMatchObject({ result: { responses: [], omitted: count('visible') } });
+  });
+
+  it('caps a moderation rebuild the same way and keeps the visible total exact', () => {
+    const stored = revealCrowd().stored;
+    // The host approves every pending response that is still listed and hides one visible one.
+    const moderated = responses.map((r) =>
+      r.status === 'pending' ? { ...r, status: 'visible' as const } : r,
+    );
+    const out = refreshModeration({ stored, players: crowd, responses: moderated });
+    const host = openResult((out as NonNullable<typeof out>).result);
+    expect(host.responses.filter((r) => r.status === 'visible')).toHaveLength(LIMITS.openRevealMax);
+    expect(host.responses.filter((r) => r.status !== 'visible').length).toBeLessThanOrEqual(50);
+    expect(host.responses.length + (host.omitted ?? 0)).toBe(responses.length);
+    expect(out?.visibleResponses).toBe(moderated.filter((r) => r.status === 'visible').length);
+    expect(out?.outcomes).toEqual(stored.outcomes);
   });
 });

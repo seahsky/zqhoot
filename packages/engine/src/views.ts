@@ -11,12 +11,13 @@ import type {
   PlayerSnapshot,
   PlayerStanding,
   Question,
+  QuestionResult,
   RosterEntry,
 } from '@zqhoot/protocol';
 import {
+  allOpenViews,
   booleanCounts,
   compareByArrival,
-  openViews,
   optionCounts,
   ratingStats,
   revealedScoredCount,
@@ -36,9 +37,19 @@ import { isScoringQuestion, toPublicQuestion } from './questions.ts';
 import { toPlayerResult } from './reveal.ts';
 import type { PlayerMessage } from './reveal.ts';
 import { EMPTY_SCORE, rankEntries } from './scoring.ts';
-import { base64UrlDecode, base64UrlEncode, compareCodePoints } from './util.ts';
+import { base64UrlDecode, base64UrlEncode, compareCodePoints, jsonBytes } from './util.ts';
 
 const HOST_LEADERBOARD_SIZE = 10;
+
+/**
+ * `host.state` is one WebSocket message and API Gateway rejects anything over 128 KB (ADR-0004).
+ * A roster of 500 flag nicknames (128 UTF-8 bytes each) takes about 100 KB of it, so the
+ * open-ended responses share what is left; this keeps headroom for the envelope the transport
+ * wraps around the snapshot. The budget bounds only the responses: the roster is not trimmed,
+ * and 500 nicknames of Indic conjuncts (192 UTF-8 bytes within the 64-unit input cap) can exceed
+ * 128 KB on their own, in every phase.
+ */
+const HOST_STATE_MAX_BYTES = 120 * 1024;
 
 const scoreOf = (board: Scoreboard | null, playerId: string): PlayerScore =>
   board?.players[playerId] ?? EMPTY_SCORE;
@@ -243,10 +254,12 @@ export function buildPlayerSnapshot(i: {
     };
   }
   if (meta.phase === 'reveal' && i.result !== null) {
+    const q = currentQuestion(meta, snapshot);
     out.reveal = {
-      result: toPlayerResult(i.result.result),
-      you:
-        i.result.outcomes[player.playerId] ?? fallbackOutcome(currentQuestion(meta, snapshot), own),
+      result: toPlayerResult(i.result.result, i.result.visibleResponses),
+      you: i.result.outcomes[player.playerId] ?? fallbackOutcome(q, own),
+      // The answer is public now, and a phone resuming here has not seen the question.
+      question: toPublicQuestion(q, snapshot.settings),
     };
   }
   if (meta.phase === 'leaderboard' && i.scoreboard !== null) {
@@ -267,6 +280,38 @@ export function buildPlayerSnapshot(i: {
     }
   }
   return out;
+}
+
+/**
+ * Drops the oldest open-ended responses, whatever their status, until the snapshot fits the
+ * `HOST_STATE_MAX_BYTES` budget. The count caps in `openViews` bound the normal case; this
+ * shortens the list when a full roster and answers at the length limit would not fit one
+ * WebSocket message. It cannot help when the roster alone is over budget: every response is then
+ * dropped and the snapshot is still too large. Dropped responses are added to `omitted`.
+ */
+function fitOpenResponses(
+  snapshot: HostSnapshot,
+  result: Extract<QuestionResult, { type: 'open' }>,
+): QuestionResult {
+  const { responses } = result;
+  const omitted = result.omitted ?? 0;
+  const room =
+    HOST_STATE_MAX_BYTES -
+    jsonBytes({
+      ...snapshot,
+      result: { ...result, responses: [], omitted: omitted + responses.length },
+    });
+  let used = 0;
+  let first = responses.length;
+  while (first > 0) {
+    // One byte more than the response for the comma that separates it from the next.
+    const size = jsonBytes(responses[first - 1]) + 1;
+    if (used + size > room) break;
+    used += size;
+    first--;
+  }
+  if (first === 0) return result;
+  return { ...result, responses: responses.slice(first), omitted: omitted + first };
 }
 
 export function buildHostSnapshot(i: {
@@ -302,7 +347,10 @@ export function buildHostSnapshot(i: {
       closedAt: meta.closedAt,
     };
   }
-  if (meta.phase === 'reveal' && i.result !== null) out.result = i.result.result;
+  if (meta.phase === 'reveal' && i.result !== null) {
+    out.result = i.result.result;
+    if (out.result.type === 'open') out.result = fitOpenResponses(out, out.result);
+  }
   if (meta.phase === 'leaderboard' && i.scoreboard !== null) {
     out.leaderboard = rankPlayers(i.players, i.scoreboard).slice(0, HOST_LEADERBOARD_SIZE);
   }
@@ -335,7 +383,9 @@ function pageOpenResponses(
 /**
  * Same aggregation as the reveal, minus correctness. For open questions `cursor` is non-null
  * only while more responses wait beyond this page; a poller keeps its last non-null cursor
- * and de-duplicates by response id.
+ * and de-duplicates by response id. Pages walk every response, not just the capped set a reveal
+ * carries: each message is bounded by the page size, and a capped list would make the older
+ * ones unreachable to a poller.
  */
 export function computeLiveStats(i: {
   question: Question;
@@ -356,7 +406,7 @@ export function computeLiveStats(i: {
     case 'wordcloud':
       return { type: 'wordcloud', ...head, words: wordCounts(t) };
     case 'open':
-      return { type: 'open', ...head, ...pageOpenResponses(openViews(t), i.after) };
+      return { type: 'open', ...head, ...pageOpenResponses(allOpenViews(t), i.after) };
     case 'rating':
       return { type: 'rating', ...head, ...ratingStats(q, t) };
   }
