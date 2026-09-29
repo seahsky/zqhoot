@@ -25,8 +25,8 @@ Updated as tasks complete. Each task has a spec with acceptance criteria in `doc
 | W2-server-node   | [W2-server-node](tasks/W2-server-node.md)     | W2-service                       | pending |
 | W2-server-lambda | [W2-server-lambda](tasks/W2-server-lambda.md) | W2-service                       | pending |
 | W2-vm-deploy     | [W2-vm-deploy](tasks/W2-vm-deploy.md)         | W2-server-node, W1-web-b         | pending |
-| P5-e2e           | to be written                                 | W2-server-node, W1-web-b         | pending |
-| P5-load          | to be written                                 | W2-server-node, W2-server-lambda | pending |
+| P5-e2e           | [P5-e2e](tasks/P5-e2e.md)                     | W2-server-node, W1-web-b         | pending |
+| P5-load          | [P5-load](tasks/P5-load.md)                   | W2-server-node, W2-server-lambda | pending |
 | P5-audit         | independent Opus audit of the whole repo      | all                              | pending |
 
 ```
