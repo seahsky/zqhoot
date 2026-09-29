@@ -71,6 +71,33 @@ export function toPlayerResult(result: QuestionResult): QuestionResult {
   };
 }
 
+/**
+ * A stored result after the host moderated responses: open-ended statuses and word cloud words
+ * are re-derived from the responses' current statuses, so concurrent moderation requests
+ * converge instead of overwriting each other's patch. `answered` and `totalPlayers` stay as they
+ * were at reveal. Null for question types with nothing to moderate.
+ */
+export function refreshModeration(i: {
+  stored: StoredQuestionResult;
+  players: PlayerRecord[];
+  /** Every response of the stored question, carrying its current status. */
+  responses: ResponseRecord[];
+}): StoredQuestionResult | null {
+  const { stored } = i;
+  const t = tally(
+    i.players,
+    i.responses.filter((r) => r.questionIndex === stored.questionIndex),
+  );
+  switch (stored.result.type) {
+    case 'open':
+      return { ...stored, result: { ...stored.result, responses: openViews(t) } };
+    case 'wordcloud':
+      return { ...stored, result: { ...stored.result, words: wordCounts(t) } };
+    default:
+      return null;
+  }
+}
+
 function revealMessages(
   version: number,
   questionIndex: number,

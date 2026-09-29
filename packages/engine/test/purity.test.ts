@@ -71,6 +71,7 @@ describe('public API (the names the service layer codes against)', () => {
     'timerClose',
     'evaluateAnswer',
     'computeReveal',
+    'refreshModeration',
     'revealFromStored',
     'toPlayerResult',
     'buildQuestionMessage',

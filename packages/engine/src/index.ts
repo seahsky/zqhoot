@@ -23,7 +23,7 @@ export type {
 } from './session.ts';
 export { evaluateAnswer } from './answers.ts';
 export type { AnswerDecision } from './answers.ts';
-export { computeReveal, revealFromStored, toPlayerResult } from './reveal.ts';
+export { computeReveal, refreshModeration, revealFromStored, toPlayerResult } from './reveal.ts';
 export type { PlayerMessage, RevealOutput } from './reveal.ts';
 export {
   buildEnded,

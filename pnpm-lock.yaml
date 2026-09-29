@@ -76,6 +76,21 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
 
+  packages/service:
+    dependencies:
+      '@zqhoot/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@zqhoot/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@zqhoot/store':
+        specifier: workspace:*
+        version: link:../store
+      hono:
+        specifier: 4.13.10
+        version: 4.13.10
+
   packages/store:
     dependencies:
       '@aws-sdk/client-dynamodb':
@@ -634,6 +649,10 @@ packages:
   get-caller-file@2.0.5:
     resolution: {integrity: sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg==}
     engines: {node: 6.* || 8.* || >= 10.*}
+
+  hono@4.13.10:
+    resolution: {integrity: sha512-dQuLsa5oO+47QVMVMaaD9cIv8ctmVtK1iRvwWngkfloFJMeFeuoUFDswIqZGxmGX3hrRzREgEArjkK9OgsQEhA==}
+    engines: {node: '>=16.9.0'}
 
   is-fullwidth-code-point@3.0.0:
     resolution: {integrity: sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg==}
@@ -1460,6 +1479,8 @@ snapshots:
     optional: true
 
   get-caller-file@2.0.5: {}
+
+  hono@4.13.10: {}
 
   is-fullwidth-code-point@3.0.0: {}
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { AnswerPayload, QuestionResult } from '@zqhoot/protocol';
-import { computeReveal, revealFromStored, toPlayerResult } from '../src/index.ts';
+import {
+  computeReveal,
+  refreshModeration,
+  revealFromStored,
+  toPlayerResult,
+} from '../src/index.ts';
 import type { PlayerRecord, ResponseRecord, Scoreboard } from '../src/index.ts';
 import {
   NOW,
@@ -784,5 +789,97 @@ describe('revealFromStored', () => {
         players: players(),
       }),
     ).toThrow(/does not match/);
+  });
+});
+
+describe('refreshModeration', () => {
+  const wordMeta = openAtIndex(s, Q.wordcloud);
+  const openMeta = openAtIndex(s, Q.open);
+  const word = (no: number, slot: number, t: string, status: ResponseRecord['status']) =>
+    response(wordMeta, pid(no), text(t), {
+      slot,
+      responseId: `${pid(no)}-${slot}`,
+      normalizedText: t,
+      status,
+    });
+  const open = (no: number, t: string, status: ResponseRecord['status'], receivedAt: number) =>
+    response(openMeta, pid(no), text(t), {
+      responseId: `${pid(no)}-0`,
+      normalizedText: t,
+      status,
+      receivedAt,
+    });
+
+  it('re-derives open-ended statuses from the responses and keeps the counts and outcomes', () => {
+    const before = [
+      open(1, 'first', 'pending', NOW + 4000),
+      open(2, 'second', 'pending', NOW + 5000),
+    ];
+    const stored = reveal(s, Q.open, before).stored;
+    const after = [open(1, 'first', 'visible', NOW + 4000), before[1] as ResponseRecord];
+    const out = refreshModeration({ stored, players: players(), responses: after });
+    expect(out).toEqual({
+      ...stored,
+      result: {
+        ...stored.result,
+        responses: [
+          expect.objectContaining({ id: 'player-01-0', status: 'visible', nickname: 'Alice' }),
+          expect.objectContaining({ id: 'player-02-0', status: 'pending', nickname: 'Bob' }),
+        ],
+      },
+    });
+    expect(stored.result).toMatchObject({
+      responses: [{ status: 'pending' }, { status: 'pending' }],
+    });
+  });
+
+  it('re-aggregates the word cloud without the words that are no longer visible', () => {
+    const before = [
+      word(1, 0, 'banana', 'visible'),
+      word(2, 0, 'banana', 'visible'),
+      word(3, 0, 'rude', 'visible'),
+    ];
+    const stored = reveal(s, Q.wordcloud, before).stored;
+    const after = [
+      before[0] as ResponseRecord,
+      before[1] as ResponseRecord,
+      word(3, 0, 'rude', 'hidden'),
+    ];
+    const out = refreshModeration({ stored, players: players(), responses: after });
+    expect(out?.result).toEqual({
+      type: 'wordcloud',
+      answered: 3,
+      totalPlayers: 4,
+      words: [{ text: 'banana', count: 2 }],
+    });
+    const restored = [...after.slice(0, 2), word(3, 0, 'rude', 'visible')];
+    expect(
+      refreshModeration({ stored: out as typeof stored, players: players(), responses: restored })
+        ?.result,
+    ).toMatchObject({
+      words: [
+        { text: 'banana', count: 2 },
+        { text: 'rude', count: 1 },
+      ],
+    });
+  });
+
+  it('ignores responses of other questions and of kicked players', () => {
+    const stored = reveal(s, Q.wordcloud, [word(1, 0, 'apple', 'visible')]).stored;
+    const elsewhere = response(openAtIndex(s, Q.single), pid(2), text('pear'), {
+      normalizedText: 'pear',
+    });
+    const kicked = word(5, 0, 'kicked', 'visible');
+    const out = refreshModeration({
+      stored,
+      players: players(),
+      responses: [word(1, 0, 'apple', 'visible'), elsewhere, kicked],
+    });
+    expect(out?.result).toMatchObject({ words: [{ text: 'apple', count: 1 }] });
+  });
+
+  it('returns null for question types with nothing to moderate', () => {
+    const stored = reveal(s, Q.poll, play(s, Q.poll, [[1, choice('opt-red'), 0]])).stored;
+    expect(refreshModeration({ stored, players: players(), responses: [] })).toBeNull();
   });
 });

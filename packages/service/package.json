@@ -1,0 +1,19 @@
+{
+  "name": "@zqhoot/service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@zqhoot/engine": "workspace:*",
+    "@zqhoot/protocol": "workspace:*",
+    "@zqhoot/store": "workspace:*",
+    "hono": "4.13.10"
+  }
+}
