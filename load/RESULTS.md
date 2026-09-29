@@ -9,35 +9,36 @@
 - **Lambda code path (emulator, run 2, quiet machine).** Median broadcast latency 19-75 ms, at most 460 ms, and every question arrived at least 992 ms before its options opened, against the 1,500 ms lead. Answers were acknowledged in 10 ms at the median and 131 ms at worst when players answered over several seconds, as people do.
 - **When all 400 answer at once, the emulator's acknowledgements take about 1.5 s at the median** (Node: 25 ms). That is an emulator property, explained below with evidence: it runs every invocation on one event loop and that loop is saturated while the burst drains. It says little about AWS.
 - **A rerun after the review fixes (run 6) met the same gates with the same counts, on a much busier machine.** With 67-76% of all cores in use by other work, median broadcast latency was 10-111 ms on Node and 29-121 ms on the emulator, and the worst question margin fell to 649 ms on Node (lead 750 ms) and 633 ms on the emulator (lead 1,500 ms): thinner, still positive.
-- **Idle-machine verification by the lead (see the next section) matches:** every gate met on both targets, with Node broadcasts at 7-9 ms median and every question arriving at least 715 ms before its options opened.
+- **Idle-machine verification by the lead on the final code (see the next section) matches:** every gate met on both targets, with Node broadcasts at 6-10 ms median and every question arriving at least 665 ms before its options opened.
 - **Nothing missed its target.** What the runs cannot say (network latency, AWS itself, and more) is listed under [What these numbers do not cover](#what-these-numbers-do-not-cover).
 
-## Lead verification runs (idle machine)
+## Lead verification runs (idle machine, final code)
 
-Taken by the lead after every build task had merged, with no other agents running: the machine averaged 4.8% of all cores during the Node run and 13.9% during the emulator run, most of the latter being the emulator and DynamoDB Local themselves. These are the figures to quote.
+Taken by the lead at commit `a5779ae`, after every fix from the visual check and the final audit had merged. Nothing else was running: the machine averaged 4.1% of all cores during the Node run and 12.4% during the emulator run, most of the latter being the emulator and DynamoDB Local. These are the figures to quote. Since the earlier runs, the audit fixes changed the join path (an atomic seat counter) and the close timing (the host closes at deadline + 750 ms grace). The earlier lead runs, at `1b4a3a4`, are kept in `load/results/` as `20260929T100934Z-node` and `20260929T101253Z-lambda-emulator`.
 
 - **Node server:** every gate met.
-  - Broadcast latency p50 7-9 ms for `question`/`reveal`/`leaderboard`, p99 at most 102 ms.
-  - Every question reached every player at least 715 ms before its options opened (lead 750 ms). Answer acks p99 5.4 ms.
-  - The server peaked at 24% of one core and 164 MB.
-- **Lambda handlers behind the emulator:** every gate met.
-  - Broadcast p50 about 20 ms and p99 at most 117 ms; the slowest single `question` delivery took 429 ms. Every question still reached every player at least 867 ms before its options opened (lead 1,500 ms), so fan-out never cut into answer time.
-  - `close-reveal` about 1.1 s is the designed 1,000 ms settle wait on the Lambda path (ADR-0006), not processing time.
-  - One answer ack of 4,000 is missing from the ack trend (n = 3,999) because that player's socket dropped before the ack arrived; the reveal settled it (`you.answered`), so it counts as accepted and delivered, as in run 6.
+  - 400/400 joined, 40/40 resumed, 12,000/12,000 messages delivered, 4,000/4,000 answers accepted, 0 errors.
+  - Broadcast latency p50 6-10 ms for `question`, `reveal` and `leaderboard`, p99 at most 60 ms.
+  - Every question reached every player at least 665 ms before its options opened (lead 750 ms). Answer acks p99 3.9 ms.
+  - The server peaked at 28% of one core and 158 MB.
+- **Lambda handlers behind the emulator:** every gate met, with the same counts and 0 errors.
+  - Broadcast p50 about 18 ms, p99 at most 84 ms. The slowest single `question` delivery took 418 ms, and every question still reached every player at least 1,051 ms before its options opened (lead 1,500 ms).
+  - Answer acks p50 10 ms, p99 54 ms.
+  - `close-reveal` of about 1.1 s is the designed 1,000 ms settle wait on the Lambda path (ADR-0006), not processing time.
 
-#### 20260929T100934Z-node
+#### 20260929T160340Z-node
 
 | Item                                                      | Value                                                                                               |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Finished                                                  | 2026-09-29T10:12:45.886Z                                                                            |
-| Commit                                                    | `1b4a3a48c088`                                                                                      |
+| Finished                                                  | 2026-09-29T16:06:54.293Z                                                                            |
+| Commit                                                    | `a5779aed5891`                                                                                      |
 | Target                                                    | node                                                                                                |
 | Machine                                                   | 4 CPUs (Intel(R) Xeon(R) Processor @ 2.10GHz), 16 GB RAM, Linux 6.18.44-fc-v37, node v22.22.2       |
-| Load average (1, 5, 15 min, running/total) before / after | 0.82 1.47 1.96 1/274 / 0.76 1.00 1.67 1/277                                                         |
-| Machine CPU during the run (all 4 cores)                  | 4.8% average, 41.6% peak; load average peaked at 0.83                                               |
+| Load average (1, 5, 15 min, running/total) before / after | 1.47 1.22 1.47 1/210 / 0.07 0.66 1.20 1/210                                                         |
+| Machine CPU during the run (all 4 cores)                  | 4.1% average, 29.1% peak; load average peaked at 1.47                                               |
 | Players / questions / reconnect ratio                     | 400 / 10 / 0.1 (40 players)                                                                         |
 | Answer think time                                         | median 3 s, sigma 0.5, limit 20 s                                                                   |
-| Duration                                                  | 189 s (room full after 19919 ms)                                                                    |
+| Duration                                                  | 189.1 s (room full after 20075 ms)                                                                  |
 | Join success                                              | 100% (400 of 400)                                                                                   |
 | Resume success                                            | 100% (40 of 40 attempts)                                                                            |
 | Delivery (received / expected)                            | 100% (12,000 of 12,000; lost 0, missed while disconnected 0, duplicates 0, received via snapshot 0) |
@@ -47,36 +48,36 @@ Taken by the lead after every build task had merged, with no other agents runnin
 
 | Latency (ms)                    |     n |    p50 |    p95 |    p99 |    max |
 | ------------------------------- | ----: | -----: | -----: | -----: | -----: |
-| broadcast `question`            | 4,000 |    9.3 |  21.58 |  26.58 |  29.32 |
-| broadcast `reveal`              | 4,000 |   8.71 |  22.22 |   34.6 |  38.08 |
-| broadcast `leaderboard`         | 3,600 |   6.66 |  80.81 | 102.27 | 107.14 |
-| broadcast `ended`               |   400 |  59.19 | 113.69 | 117.62 | 119.18 |
-| answer ack                      | 4,000 |   1.36 |   2.28 |   5.42 |  40.62 |
-| question margin before `openAt` | 4,000 | 731.97 | 743.72 |  745.6 |    747 |
-| host `open-first`               |     1 |   9.07 |   9.07 |   9.07 |   9.07 |
-| host `open-next`                |     9 |    5.2 |   6.45 |   6.75 |   6.83 |
-| host `close-reveal`             |    10 |   9.69 |  12.37 |  12.49 |  12.52 |
-| host `reveal-leaderboard`       |     9 |   8.19 |  29.63 |  33.42 |  34.37 |
-| host `end`                      |     1 |    6.6 |    6.6 |    6.6 |    6.6 |
+| broadcast `question`            | 4,000 |   9.94 |  46.55 |  59.82 |  74.52 |
+| broadcast `reveal`              | 4,000 |   8.53 |  34.75 |  52.26 |     57 |
+| broadcast `leaderboard`         | 3,600 |   5.73 |  14.31 |  16.49 |  20.37 |
+| broadcast `ended`               |   400 |  59.76 |  89.93 | 107.34 | 112.66 |
+| answer ack                      | 4,000 |   1.28 |      2 |   3.85 |  32.27 |
+| question margin before `openAt` | 4,000 | 730.52 | 743.23 | 745.32 | 746.76 |
+| host `open-first`               |     1 |   7.68 |   7.68 |   7.68 |   7.68 |
+| host `open-next`                |     9 |   6.38 |  12.01 |  12.68 |  12.85 |
+| host `close-reveal`             |    10 |  11.84 |  16.72 |  16.84 |  16.87 |
+| host `reveal-leaderboard`       |     9 |   7.77 |  12.79 |  13.93 |  14.21 |
+| host `end`                      |     1 |   17.9 |   17.9 |   17.9 |   17.9 |
 
 | Process | peak CPU % | peak CPU % after 5 s | p95 CPU % | avg CPU % | peak RSS MB | peak fds |
 | ------- | ---------: | -------------------: | --------: | --------: | ----------: | -------: |
-| server  |         24 |                   19 |        12 |       4.6 |         164 |      824 |
-| k6      |      134.7 |                 79.8 |        15 |       7.5 |       472.9 |      810 |
+| server  |       27.9 |                 27.9 |        11 |       4.6 |       157.7 |      825 |
+| k6      |      110.9 |                 78.8 |        13 |       7.2 |       486.1 |      810 |
 
-#### 20260929T101253Z-lambda-emulator
+#### 20260929T160700Z-lambda-emulator
 
 | Item                                                      | Value                                                                                               |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Finished                                                  | 2026-09-29T10:16:25.053Z                                                                            |
-| Commit                                                    | `1b4a3a48c088`                                                                                      |
+| Finished                                                  | 2026-09-29T16:10:31.455Z                                                                            |
+| Commit                                                    | `a5779aed5891`                                                                                      |
 | Target                                                    | lambda-emulator                                                                                     |
 | Machine                                                   | 4 CPUs (Intel(R) Xeon(R) Processor @ 2.10GHz), 16 GB RAM, Linux 6.18.44-fc-v37, node v22.22.2       |
-| Load average (1, 5, 15 min, running/total) before / after | 1.10 1.07 1.69 1/268 / 0.52 0.90 1.50 2/300                                                         |
-| Machine CPU during the run (all 4 cores)                  | 13.9% average, 65% peak; load average peaked at 1.55                                                |
+| Load average (1, 5, 15 min, running/total) before / after | 0.14 0.65 1.19 1/204 / 0.53 0.63 1.07 2/222                                                         |
+| Machine CPU during the run (all 4 cores)                  | 12.4% average, 68.7% peak; load average peaked at 0.78                                              |
 | Players / questions / reconnect ratio                     | 400 / 10 / 0.1 (40 players)                                                                         |
 | Answer think time                                         | median 3 s, sigma 0.5, limit 20 s                                                                   |
-| Duration                                                  | 207.4 s (room full after 20088 ms)                                                                  |
+| Duration                                                  | 206.9 s (room full after 20073 ms)                                                                  |
 | Join success                                              | 100% (400 of 400)                                                                                   |
 | Resume success                                            | 100% (40 of 40 attempts)                                                                            |
 | Delivery (received / expected)                            | 100% (12,000 of 12,000; lost 0, missed while disconnected 0, duplicates 0, received via snapshot 0) |
@@ -86,23 +87,23 @@ Taken by the lead after every build task had merged, with no other agents runnin
 
 | Latency (ms)                    |     n |     p50 |     p95 |     p99 |     max |
 | ------------------------------- | ----: | ------: | ------: | ------: | ------: |
-| broadcast `question`            | 4,000 |   20.98 |   56.38 |  117.46 |   428.8 |
-| broadcast `reveal`              | 4,000 |      20 |   39.63 |    48.4 |   56.37 |
-| broadcast `leaderboard`         | 3,600 |   20.71 |   42.03 |      61 |   91.78 |
-| broadcast `ended`               |   400 |   93.91 |  172.32 |  261.04 |  266.75 |
-| answer ack                      | 3,999 |   11.82 |    40.3 |   78.88 |     185 |
-| question margin before `openAt` | 4,000 | 1291.28 | 1461.28 | 1468.59 | 1472.02 |
-| host `open-first`               |     1 |   44.39 |   44.39 |   44.39 |   44.39 |
-| host `open-next`                |     9 |   47.33 |   57.65 |   59.32 |   59.74 |
-| host `close-reveal`             |    10 | 1098.63 | 1109.21 | 1110.96 |  1111.4 |
-| host `reveal-leaderboard`       |     9 |   49.63 |   56.44 |   57.48 |   57.73 |
-| host `end`                      |     1 |   66.75 |   66.75 |   66.75 |   66.75 |
+| broadcast `question`            | 4,000 |   17.75 |   39.97 |   83.92 |  418.26 |
+| broadcast `reveal`              | 4,000 |   17.97 |   37.38 |   51.65 |   69.33 |
+| broadcast `leaderboard`         | 3,600 |   17.44 |   34.95 |   42.52 |   49.22 |
+| broadcast `ended`               |   400 |   83.59 |  116.84 |  124.47 |  142.12 |
+| answer ack                      | 4,000 |   10.16 |   26.09 |   53.89 |  187.04 |
+| question margin before `openAt` | 4,000 | 1330.92 | 1461.84 | 1471.39 | 1476.57 |
+| host `open-first`               |     1 |   48.24 |   48.24 |   48.24 |   48.24 |
+| host `open-next`                |     9 |   42.22 |   51.84 |   53.92 |   54.44 |
+| host `close-reveal`             |    10 | 1093.87 | 1109.69 | 1116.83 | 1118.61 |
+| host `reveal-leaderboard`       |     9 |   42.39 |   47.32 |   47.74 |   47.85 |
+| host `end`                      |     1 |   42.63 |   42.63 |   42.63 |   42.63 |
 
 | Process        | peak CPU % | peak CPU % after 5 s | p95 CPU % | avg CPU % | peak RSS MB | peak fds |
 | -------------- | ---------: | -------------------: | --------: | --------: | ----------: | -------: |
-| server         |      116.3 |                116.3 |      66.1 |      25.2 |       274.4 |      946 |
-| k6             |      162.7 |                 51.9 |        13 |       7.4 |       416.3 |      810 |
-| dynamodb-local |       91.1 |                 91.1 |        41 |      13.7 |       654.5 |      219 |
+| server         |      116.9 |                116.9 |        67 |      23.6 |       327.5 |      950 |
+| k6             |      138.9 |                 45.9 |        12 |       6.6 |       423.4 |      810 |
+| dynamodb-local |       88.9 |                 88.9 |        46 |      13.7 |       434.1 |      219 |
 
 ## How the runs were taken
 
