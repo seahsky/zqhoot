@@ -1,4 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src", "test"]
+  "compilerOptions": {
+    // Node typings exist for test/ (the purity scan reads src/ with node:fs). tsconfig.src.json
+    // checks src/ without them, which is what keeps Node globals out of the engine.
+    "types": ["node"]
+  },
+  "include": ["src", "test", "vitest.config.ts"]
 }

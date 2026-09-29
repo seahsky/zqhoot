@@ -213,7 +213,7 @@ export function buildResultsCsv(i: {
 
 1. NFKC. Strip zero-width and other default-ignorable format characters (`\p{Cf}` except bidi controls, `\p{Default_Ignorable_Code_Point}`). **Reject** bidi controls (U+061C, U+200E-200F, U+202A-202E, U+2066-2069), `\p{Cc}`, `\p{Co}`, `\p{Cn}`, and line/paragraph separators, with `invalid-characters`.
 2. Collapse runs of `\p{Zs}` to one ASCII space and trim.
-3. Reject more than 2 combining marks on one grapheme (anti-Zalgo) with `invalid-characters`.
+3. Reject more than 3 consecutive non-spacing or enclosing marks (`\p{Mn}`, `\p{Me}`) on one base (anti-Zalgo) with `invalid-characters`. Spacing marks (`\p{Mc}`) do not count. This was amended after review: the original rule of 2 per grapheme rejected ordinary Hindi and Bengali spellings.
 4. Count graphemes with `Intl.Segmenter` (granularity `grapheme`): fewer than `LIMITS.nicknameMinGraphemes` gives `too-short`, more than `LIMITS.nicknameMaxGraphemes` gives `too-long`.
 5. `key` (uniqueness skeleton): lowercase, then a documented confusables map (at least Cyrillic and Greek letters that look like Latin: а е о р с у х і ј ѕ ԁ ӏ and Α Β Ε Ζ Η Ι Κ Μ Ν Ο Ρ Τ Υ Χ ο ν ι κ etc.), then leetspeak digits/symbols (0→o 1→l 3→e 4→a 5→s 7→t @→a $→s), then drop spaces and punctuation. Emoji are kept in the key. If the key is empty, return `invalid-characters`.
 6. `inappropriate` if `obscenity` (English dataset + `englishRecommendedTransformers`) matches the normalised nickname or the key.
