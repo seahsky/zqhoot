@@ -18,9 +18,9 @@ import type { HostLiveFixtureId } from './fixtures/host.ts';
 
 const noop = () => undefined;
 
-export function HostLoginFixture() {
+export function HostLoginFixture({ error = null }: { error?: string | null }) {
   return (
-    <LoginScreen mode="local" busy={false} error={null} onLocalSubmit={noop} onCognito={noop} />
+    <LoginScreen mode="local" busy={false} error={error} onLocalSubmit={noop} onCognito={noop} />
   );
 }
 
@@ -104,7 +104,7 @@ export function EditorFixture({ fixture }: { fixture: EditFixture }) {
       onFile={noop}
       displayName="Alex Admin"
       onSignOut={noop}
-      leaveTarget={null}
+      leaving={false}
       onConfirmLeave={noop}
       onCancelLeave={noop}
     />

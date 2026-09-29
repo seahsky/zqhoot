@@ -21,7 +21,7 @@ import {
   wordCloudQ,
   openQ,
 } from './hostSnapshots.ts';
-import { hostStateOf, statsFor } from './hostState.ts';
+import { hostStateOf, refusedStateOf, statsFor } from './hostState.ts';
 import { DEMO_IMAGE_URL } from './images.ts';
 
 export { HOST_FIXTURE_MESSAGES } from './hostState.ts';
@@ -104,6 +104,7 @@ export const PRESENT_FIXTURES = {
     ),
   },
   'present-help': { state: hostStateOf(hostSnapshot({ roster: roster(22) })), helpOpen: true },
+  'present-forbidden': { state: refusedStateOf('forbidden') },
 } satisfies Record<string, PresentFixture>;
 
 export type PresentFixtureId = keyof typeof PRESENT_FIXTURES;

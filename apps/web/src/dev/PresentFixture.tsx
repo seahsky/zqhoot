@@ -58,6 +58,7 @@ export function PresentFixtureScreen({ id }: { id: PresentFixtureId }) {
       helpOpen={help}
       onHelpClose={() => setHelp(false)}
       onReload={noop}
+      onSignOut={noop}
       bar={{
         ...game,
         locked,

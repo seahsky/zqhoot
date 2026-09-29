@@ -24,8 +24,18 @@ const base = {
   id: Id,
   prompt: Text(LIMITS.questionPromptMax),
   imageKey: MediaKey.optional(),
+  /**
+   * What the picture shows, for someone who cannot see it. Without one the picture is
+   * decorative and the prompt is the accessible content.
+   */
+  imageAlt: z.string().trim().max(LIMITS.imageAltMax).optional(),
   timeLimitSec: TimeLimitSec,
 };
+
+/** A description with no picture to describe is a mistake, not a preference. */
+const altNeedsImage = (q: { imageKey?: string | undefined; imageAlt?: string | undefined }) =>
+  q.imageAlt === undefined || q.imageKey !== undefined;
+const ALT_ISSUE = { message: 'imageAlt requires imageKey', path: ['imageAlt'] };
 
 const uniqueOptionIds = (opts: ChoiceOption[]) =>
   new Set(opts.map((o) => o.id)).size === opts.length;
@@ -42,14 +52,17 @@ export const SingleChoiceQuestion = z
   .refine((q) => q.options.some((o) => o.id === q.correctOptionId), {
     message: 'correctOptionId must match an option',
     path: ['correctOptionId'],
-  });
+  })
+  .refine(altNeedsImage, ALT_ISSUE);
 
-export const TrueFalseQuestion = z.object({
-  ...base,
-  type: z.literal('truefalse'),
-  correct: z.boolean(),
-  points: PointsMultiplier,
-});
+export const TrueFalseQuestion = z
+  .object({
+    ...base,
+    type: z.literal('truefalse'),
+    correct: z.boolean(),
+    points: PointsMultiplier,
+  })
+  .refine(altNeedsImage, ALT_ISSUE);
 
 export const PollQuestion = z
   .object({
@@ -57,30 +70,37 @@ export const PollQuestion = z
     type: z.literal('poll'),
     options: z.array(ChoiceOption).min(LIMITS.choiceOptionsMin).max(LIMITS.pollOptionsMax),
   })
-  .refine((q) => uniqueOptionIds(q.options), { message: 'duplicate option id', path: ['options'] });
+  .refine((q) => uniqueOptionIds(q.options), { message: 'duplicate option id', path: ['options'] })
+  .refine(altNeedsImage, ALT_ISSUE);
 
-export const WordCloudQuestion = z.object({
-  ...base,
-  type: z.literal('wordcloud'),
-  maxEntries: z.number().int().min(1).max(LIMITS.wordEntriesMax),
-});
+export const WordCloudQuestion = z
+  .object({
+    ...base,
+    type: z.literal('wordcloud'),
+    maxEntries: z.number().int().min(1).max(LIMITS.wordEntriesMax),
+  })
+  .refine(altNeedsImage, ALT_ISSUE);
 
-export const OpenQuestion = z.object({
-  ...base,
-  type: z.literal('open'),
-  maxEntries: z.number().int().min(1).max(LIMITS.openEntriesMax),
-  /** When true, responses stay hidden from the presenter until the host approves them. */
-  requireApproval: z.boolean(),
-});
+export const OpenQuestion = z
+  .object({
+    ...base,
+    type: z.literal('open'),
+    maxEntries: z.number().int().min(1).max(LIMITS.openEntriesMax),
+    /** When true, responses stay hidden from the presenter until the host approves them. */
+    requireApproval: z.boolean(),
+  })
+  .refine(altNeedsImage, ALT_ISSUE);
 
-export const RatingQuestion = z.object({
-  ...base,
-  type: z.literal('rating'),
-  /** Scale runs from 1 to `max`. */
-  max: z.number().int().min(LIMITS.ratingMaxMin).max(LIMITS.ratingMaxMax),
-  minLabel: z.string().trim().max(LIMITS.ratingLabelMax).optional(),
-  maxLabel: z.string().trim().max(LIMITS.ratingLabelMax).optional(),
-});
+export const RatingQuestion = z
+  .object({
+    ...base,
+    type: z.literal('rating'),
+    /** Scale runs from 1 to `max`. */
+    max: z.number().int().min(LIMITS.ratingMaxMin).max(LIMITS.ratingMaxMax),
+    minLabel: z.string().trim().max(LIMITS.ratingLabelMax).optional(),
+    maxLabel: z.string().trim().max(LIMITS.ratingLabelMax).optional(),
+  })
+  .refine(altNeedsImage, ALT_ISSUE);
 
 export const Question = z.discriminatedUnion('type', [
   SingleChoiceQuestion,

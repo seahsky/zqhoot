@@ -17,10 +17,13 @@ import {
   formatNumber,
   graphemeCount,
   ordinal,
+  ownAnswerLine,
   pointsLabel,
+  revealHeadline,
   standingSentence,
   timerTier,
 } from '../src/state/format.ts';
+import type { RevealVariant } from '../src/state/player.ts';
 
 describe('ordinal', () => {
   it('handles the teens and every last digit', () => {
@@ -230,5 +233,56 @@ describe('join copy', () => {
     expect(lookupRefusalMessage('ended')).toMatch(/ended/);
     expect(lookupRefusalMessage('full')).toMatch(/full/);
     expect(lookupRefusalMessage(undefined)).toMatch(/right now/);
+  });
+});
+
+describe('revealHeadline', () => {
+  const view = (variant: RevealVariant, gained = 0) =>
+    ({ variant, gained }) as unknown as Parameters<typeof revealHeadline>[0];
+
+  it('has its own words for each of the four outcomes', () => {
+    expect(revealHeadline(view('correct', 870))).toBe('Correct, +870');
+    expect(revealHeadline(view('incorrect'))).toBe('Not this time');
+    expect(revealHeadline(view('no-answer'))).toBe("You didn't answer this one");
+    expect(revealHeadline(view('unscored'))).toBe('Question closed');
+    const all = (['correct', 'incorrect', 'no-answer', 'unscored'] as const).map((v) =>
+      revealHeadline(view(v, 100)),
+    );
+    expect(new Set(all).size).toBe(4);
+  });
+
+  it('an unscored reveal does not repeat the words of the screen the player just left', () => {
+    // "Thanks, your response is in" and "Answer locked in" are the submitted screen's headings.
+    const locked = ['Thanks, your response is in', 'Answer locked in'];
+    expect(locked).not.toContain(revealHeadline(view('unscored')));
+  });
+});
+
+describe('ownAnswerLine', () => {
+  it('a choice is its letter and text: "Your answer: B · Pizza"', () => {
+    expect(ownAnswerLine({ kind: 'choice', slot: 1, text: 'Pizza' })).toBe(
+      'Your answer: B · Pizza',
+    );
+    expect(ownAnswerLine({ kind: 'choice', slot: 0, text: 'True' })).toBe('Your answer: A · True');
+    expect(ownAnswerLine({ kind: 'choice', slot: 5, text: 'Sushi' })).toBe(
+      'Your answer: F · Sushi',
+    );
+  });
+
+  it('a rating says where on the scale', () => {
+    expect(ownAnswerLine({ kind: 'rating', value: 4, max: 5 })).toBe('Your rating: 4 of 5');
+  });
+
+  it('words and responses are the ones entered, in order, with the right number', () => {
+    expect(ownAnswerLine({ kind: 'words', entries: ['sunny'] })).toBe('Your word: sunny');
+    expect(ownAnswerLine({ kind: 'words', entries: ['sunny', 'busy'] })).toBe(
+      'Your words: sunny, busy',
+    );
+    expect(ownAnswerLine({ kind: 'text', entries: ['Quieter desks'] })).toBe(
+      'Your response: Quieter desks',
+    );
+    expect(ownAnswerLine({ kind: 'text', entries: ['Quieter desks', 'A window'] })).toBe(
+      'Your responses: Quieter desks · A window',
+    );
   });
 });

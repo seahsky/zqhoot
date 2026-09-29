@@ -40,6 +40,8 @@ export const singleImageQ: Extract<Question, { type: 'single' }> = {
   id: 'question-planet-img',
   prompt: 'Which planet is shown in this picture?',
   imageKey: IMAGE_KEY,
+  // Describes the picture without naming the answer.
+  imageAlt: 'A gas giant with a wide, bright ring system, seen against black space',
   options: [
     { id: 'option-saturn', text: 'Saturn' },
     { id: 'option-jupiter', text: 'Jupiter' },

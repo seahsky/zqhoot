@@ -8,6 +8,12 @@ import type { Page, Route } from '@playwright/test';
 
 export const TOKEN = 'T'.repeat(40);
 
+/** A 48 x 32 dark PNG: what `/media/*` serves, so an uploaded picture's preview really renders. */
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAIAAADbtmxLAAAAMklEQVR42u3OMQ0AAAgDsIngwwT+1eGCcDSpgKZ6XomQkJCQkJCQkJCQkJCQkJCQ0KUFONI6H091rCMAAAAASUVORK5CYII=',
+  'base64',
+);
+
 export interface Recorded {
   method: string;
   path: string;
@@ -62,6 +68,12 @@ export class HostApi {
   }
 
   async attach(page: Page) {
+    // Only the site's own `/media/`: `**/media/**` would also catch `/api/media/uploads`, and
+    // without a route the preview's request would go to the dev proxy target that is not there.
+    await page.route(
+      (url) => url.pathname.startsWith('/media/'),
+      (r) => r.fulfill({ status: 200, contentType: 'image/png', body: PNG }),
+    );
     await page.route('**/api/me', (r) =>
       r.fulfill({ json: { hostId: 'local:admin', displayName: 'Alex Admin' } }),
     );

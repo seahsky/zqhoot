@@ -86,6 +86,16 @@ export interface CorrectAnswer {
   text: string;
 }
 
+/**
+ * What the player sent for a question, worded for the reveal screen. A choice carries the slot
+ * that fixes its letter; the other kinds carry what was typed or picked.
+ */
+export type OwnAnswer =
+  | { kind: 'choice'; slot: number; text: string }
+  | { kind: 'rating'; value: number; max: number }
+  | { kind: 'words'; entries: string[] }
+  | { kind: 'text'; entries: string[] };
+
 export type PlayerView =
   /** Before the first welcome. */
   | { screen: 'connecting' }
@@ -124,6 +134,11 @@ export type PlayerView =
       /** Base points plus streak bonus. */
       gained: number;
       correctAnswer: CorrectAnswer | null;
+      /**
+       * The player's own submission, kept from the question through its reveal. A reveal
+       * reached by a resume has none: the snapshot does not carry it.
+       */
+      yourAnswer: OwnAnswer | null;
     }
   | { screen: 'leaderboard'; index: number; total: number; standing: PlayerStanding }
   | {
@@ -195,6 +210,8 @@ type Stage =
       result: QuestionResult;
       outcome: PlayerOutcome;
       question: PublicQuestion | null;
+      /** What this page saw the server accept for the question; empty after a resume. */
+      responses: readonly AnswerPayload[];
     }
   | { kind: 'leaderboard'; index: number; standing: PlayerStanding }
   | { kind: 'ended'; podium: LeaderboardEntry[]; totalPlayers: number; standing: FinalStanding }
@@ -273,6 +290,42 @@ function correctAnswerOf(
   return null;
 }
 
+/** The player's submission in the words of the reveal screen; null when there is nothing to show. */
+export function ownAnswerOf(
+  question: PublicQuestion | null,
+  responses: readonly AnswerPayload[],
+): OwnAnswer | null {
+  if (question === null || responses.length === 0) return null;
+  const texts = () =>
+    responses.flatMap((r) => (r.kind === 'text' ? [r.text] : [])).filter((t) => t !== '');
+  switch (question.type) {
+    case 'single':
+    case 'poll': {
+      const picked = responses.find((r) => r.kind === 'choice');
+      const slot = question.options.findIndex(
+        (o) => picked?.kind === 'choice' && o.id === picked.optionId,
+      );
+      const option = question.options[slot];
+      return option ? { kind: 'choice', slot, text: option.text } : null;
+    }
+    case 'truefalse': {
+      const picked = responses.find((r) => r.kind === 'boolean');
+      if (picked?.kind !== 'boolean') return null;
+      return { kind: 'choice', slot: picked.value ? 0 : 1, text: picked.value ? 'True' : 'False' };
+    }
+    case 'rating': {
+      const picked = responses.find((r) => r.kind === 'rating');
+      return picked?.kind === 'rating'
+        ? { kind: 'rating', value: picked.value, max: question.max }
+        : null;
+    }
+    case 'wordcloud':
+      return texts().length > 0 ? { kind: 'words', entries: texts() } : null;
+    case 'open':
+      return texts().length > 0 ? { kind: 'text', entries: texts() } : null;
+  }
+}
+
 function deriveView(s: Omit<PlayerState, 'view'>): PlayerView {
   const { stage, now } = s;
   switch (stage.kind) {
@@ -309,6 +362,7 @@ function deriveView(s: Omit<PlayerState, 'view'>): PlayerView {
         outcome: stage.outcome,
         gained: stage.outcome.points + stage.outcome.streakBonus,
         correctAnswer: correctAnswerOf(stage.question, stage.result),
+        yourAnswer: ownAnswerOf(stage.question, stage.responses),
       };
     case 'question': {
       const { run } = stage;
@@ -365,6 +419,21 @@ function newRun(info: QuestionInfo, closed = false, responses: AnswerPayload[] =
 
 function currentRun(s: PlayerState): QuestionRun | null {
   return s.stage.kind === 'question' ? s.stage.run : null;
+}
+
+/**
+ * What the server has accepted from this player for question `index`, as far as this page saw
+ * it: from the open run (entries still waiting for their ack are not counted) or from a reveal
+ * that is delivered again.
+ */
+function heldResponses(s: PlayerState, index: number): readonly AnswerPayload[] {
+  const { stage } = s;
+  if (stage.kind === 'question' && stage.run.info.index === index) {
+    const { responses, pending } = stage.run;
+    return responses.slice(0, responses.length - pending);
+  }
+  if (stage.kind === 'reveal' && stage.index === index) return stage.responses;
+  return [];
 }
 
 /** The public question this page already holds for `index`, from the open run or a reveal. */
@@ -494,6 +563,7 @@ function reduceMessage(prev: PlayerState, msg: ServerMessage): PlayerState {
           result: msg.result,
           outcome: msg.you,
           question: heldQuestion(state, msg.index),
+          responses: heldResponses(state, msg.index),
         },
       });
     }
@@ -575,6 +645,8 @@ function applySnapshot(state: PlayerState, snap: PlayerSnapshot): PlayerState {
       // A server that predates `reveal.question` leaves it out; what this page already held
       // for the same question then does as well as nothing.
       question: snap.reveal.question ?? heldQuestion(state, snap.questionIndex),
+      // The snapshot does not say what this player sent, so a resumed reveal shows nothing.
+      responses: [],
     };
   } else if (snap.phase === 'leaderboard' && snap.leaderboard) {
     stage = { kind: 'leaderboard', index: snap.questionIndex, standing: snap.leaderboard.you };

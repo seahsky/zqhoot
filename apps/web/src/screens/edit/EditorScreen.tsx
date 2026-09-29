@@ -14,6 +14,7 @@ import type { FieldIssue, QuizDraft } from '../../state/editor.ts';
 import { Button } from '../../ui/Button.tsx';
 import { CheckboxField, SelectField } from '../../ui/Controls.tsx';
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx';
+import { rescueFocus } from '../../ui/focus.ts';
 import { HostShell } from '../../ui/HostShell.tsx';
 import { StatusLine } from '../../ui/StatusLine.tsx';
 import { TextField } from '../../ui/TextField.tsx';
@@ -48,10 +49,11 @@ export interface EditorScreenProps {
   onFile: (questionId: string, file: File) => void;
   displayName: string | null;
   onSignOut: () => void;
-  /** Return false to stay when a header link would drop unsaved changes. */
-  onLeave?: (to: string) => boolean;
-  /** Asks to leave with unsaved changes; the dialog is driven by the container. */
-  leaveTarget: string | null;
+  /**
+   * The host tried to leave (a link, Back, Sign out) with unsaved changes, and is being asked.
+   * The container holds what was stopped; this only shows the question.
+   */
+  leaving: boolean;
   onConfirmLeave: () => void;
   onCancelLeave: () => void;
 }
@@ -125,6 +127,12 @@ export function EditorScreen(p: EditorScreenProps) {
   const [newType, setNewType] = useState<QuestionType>('single');
   const [pendingDelete, setPendingDelete] = useState<number | null>(null);
   const [focusAfter, setFocusAfter] = useState<string | null>(null);
+  // Where focus goes once a list edit has removed or moved the control that had it.
+  const [refocus, setRefocus] = useState<
+    | { kind: 'move'; questionId: string; button: 'move-up' | 'move-down' }
+    | { kind: 'deleted'; index: number }
+    | null
+  >(null);
   const byField = issuesByField(p.issues);
   const errorOf = (id: string) =>
     byField
@@ -142,6 +150,28 @@ export function EditorScreen(p: EditorScreenProps) {
     return () => window.clearTimeout(id);
   }, [focusAfter, p.openIndex]);
 
+  // Runs after the confirmation dialog has closed (its effect is a child's, so it runs first),
+  // and only if focus really was lost: a moved card can be re-inserted by the browser, and a
+  // deleted question takes its Delete button, and the dialog's way back, with it.
+  useEffect(() => {
+    if (refocus === null) return;
+    setRefocus(null);
+    if (refocus.kind === 'move') {
+      rescueFocus(
+        document.querySelector<HTMLElement>(
+          `[data-question-id="${refocus.questionId}"] [data-focus="${refocus.button}"]`,
+        ),
+      );
+      return;
+    }
+    // The next question is now at the deleted one's place; after the last, the add control.
+    rescueFocus(
+      document.querySelector<HTMLElement>(
+        `[data-question="${refocus.index}"] [data-focus="summary"]`,
+      ) ?? document.querySelector<HTMLElement>('[data-focus="add-question"]'),
+    );
+  }, [refocus]);
+
   const pick = (issue: FieldIssue) => {
     if (issue.question !== null && p.openIndex !== issue.question) p.onOpen(issue.question);
     setFocusAfter(issue.fieldId);
@@ -157,7 +187,7 @@ export function EditorScreen(p: EditorScreenProps) {
           : '';
 
   return (
-    <HostShell displayName={p.displayName} onSignOut={p.onSignOut} onLeave={p.onLeave}>
+    <HostShell displayName={p.displayName} onSignOut={p.onSignOut}>
       <div className={styles.page}>
         <header className={styles.pageHead}>
           <h1>{p.isNew ? 'New quiz' : 'Edit quiz'}</h1>
@@ -270,7 +300,13 @@ export function EditorScreen(p: EditorScreenProps) {
                 onToggle={() => p.onOpen(p.openIndex === i ? null : i)}
                 onChange={(next) => p.onChange(replaceQuestion(draft, i, next))}
                 onMove={(delta) => {
+                  if (i + delta < 0 || i + delta >= draft.questions.length) return;
                   p.onChange(moveQuestion(draft, i, delta));
+                  setRefocus({
+                    kind: 'move',
+                    questionId: q.id,
+                    button: delta < 0 ? 'move-up' : 'move-down',
+                  });
                   // The open card stays open on the same question: it follows its own move, or
                   // steps aside when the card it swapped with was the open one.
                   if (p.openIndex === i) p.onOpen(i + delta);
@@ -298,6 +334,7 @@ export function EditorScreen(p: EditorScreenProps) {
               variant="secondary"
               size="compact"
               disabled={draft.questions.length >= LIMITS.questionsMax}
+              data-focus="add-question"
               onClick={() => {
                 const r = addQuestion(draft, newType);
                 p.onChange(r.draft);
@@ -330,12 +367,13 @@ export function EditorScreen(p: EditorScreenProps) {
           if (pendingDelete !== null) {
             p.onChange(deleteQuestion(draft, pendingDelete));
             if (p.openIndex !== null) p.onOpen(null);
+            setRefocus({ kind: 'deleted', index: pendingDelete });
           }
           setPendingDelete(null);
         }}
       />
       <ConfirmDialog
-        open={p.leaveTarget !== null}
+        open={p.leaving}
         title="Leave without saving?"
         body="You have changes that are not saved. If you leave now they are lost."
         confirmLabel="Leave and lose changes"

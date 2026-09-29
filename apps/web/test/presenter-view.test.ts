@@ -18,6 +18,7 @@ import {
   ratingQ,
   revealSnapshot,
   roster,
+  singleImageQ,
   singleQ,
   trueFalseQ,
   wordCloudQ,
@@ -135,6 +136,29 @@ describe('screens by phase', () => {
     expect(
       presenterView(stateFor(hostSnapshot({ phase: 'ended', questionIndex: 9, podium: [] })), NOW),
     ).toMatchObject({ screen: 'thanks', players: 22 });
+  });
+});
+
+describe('the picture of a question', () => {
+  const questionOf = (v: ReturnType<typeof presenterView>) => {
+    if (v.screen !== 'question') throw new Error(`expected a question, got ${v.screen}`);
+    return v.q;
+  };
+
+  it("carries the host's description, for the image's alt text", () => {
+    const q = questionOf(presenterView(stateFor(questionSnapshot(singleImageQ, 5_000)), NOW));
+    expect(q.imageKey).toBe(singleImageQ.imageKey);
+    expect(q.imageAlt).toBe(singleImageQ.imageAlt);
+  });
+
+  it('has no description when the host wrote none: the picture is decoration', () => {
+    const undescribed = { ...singleImageQ, imageAlt: undefined };
+    const q = questionOf(presenterView(stateFor(questionSnapshot(undescribed, 5_000)), NOW));
+    expect(q.imageKey).toBe(singleImageQ.imageKey);
+    expect(q.imageAlt).toBeNull();
+    expect(
+      questionOf(presenterView(stateFor(questionSnapshot(singleQ, 5_000)), NOW)).imageAlt,
+    ).toBe(null);
   });
 });
 

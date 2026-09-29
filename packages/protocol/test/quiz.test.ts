@@ -305,6 +305,59 @@ describe('limits at their exact boundaries', () => {
     expect(ok(Question, withImage('media/owner-1/abc.png'))).toBe(false);
   });
 
+  describe('imageAlt', () => {
+    const KEY = 'media/owner-1/abcdef.png';
+    const withAlt = (imageAlt: unknown, imageKey: string | undefined = KEY) => ({
+      imageAlt,
+      ...(imageKey !== undefined ? { imageKey } : {}),
+    });
+
+    it('is optional, and accepted with a picture on every question type', () => {
+      for (const make of [single, truefalse, poll, wordcloud, open, rating]) {
+        expect(ok(Question, make(withAlt('A red planet with rings'))), make().type).toBe(true);
+        expect(ok(Question, make({ imageKey: KEY })), `${make().type} without alt`).toBe(true);
+        expect(ok(Question, make()), `${make().type} without either`).toBe(true);
+      }
+    });
+
+    it('is trimmed and held to LIMITS.imageAltMax characters', () => {
+      expect(LIMITS.imageAltMax).toBe(150);
+      expect(Question.parse(poll(withAlt('  Saturn, seen from Cassini  '))).imageAlt).toBe(
+        'Saturn, seen from Cassini',
+      );
+      expect(ok(Question, poll(withAlt('a'.repeat(150))))).toBe(true);
+      expect(ok(Question, poll(withAlt('a'.repeat(151))))).toBe(false);
+      // The cap is on the trimmed text, so padding does not eat into it.
+      expect(ok(Question, poll(withAlt(`  ${'a'.repeat(150)}  `)))).toBe(true);
+    });
+
+    it('is plain text: a string, nothing else', () => {
+      for (const bad of [42, true, null, ['a'], { text: 'a' }]) {
+        expect(ok(Question, poll(withAlt(bad))), JSON.stringify(bad)).toBe(false);
+      }
+    });
+
+    it('is refused without an imageKey, on every question type', () => {
+      for (const make of [single, truefalse, poll, wordcloud, open, rating]) {
+        const r = Question.safeParse(make({ imageAlt: 'A picture that is not there' }));
+        expect(r.success, make().type).toBe(false);
+        if (!r.success) {
+          expect(r.error.issues.map((i) => i.path.join('.'))).toContain('imageAlt');
+        }
+      }
+      // Even an empty description is a description of nothing.
+      expect(ok(Question, poll({ imageAlt: '' }))).toBe(false);
+    });
+
+    it('survives a quiz round trip', () => {
+      const input = quiz([single(withAlt('Mercury, grey and cratered'))]);
+      expect(QuizInput.parse(input).questions[0]).toMatchObject({
+        imageKey: KEY,
+        imageAlt: 'Mercury, grey and cratered',
+      });
+    });
+  });
+
   it('exposes the numbers the product documents', () => {
     expect(LIMITS).toMatchObject({
       pinLength: 6,
@@ -323,6 +376,7 @@ describe('limits at their exact boundaries', () => {
       wordCloudTopN: 60,
       statsResponsesPage: 100,
       openRevealMax: 100,
+      imageAltMax: 150,
     });
   });
 });

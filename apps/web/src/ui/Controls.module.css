@@ -39,8 +39,10 @@
   color: var(--ink);
 }
 
+/* One heavier border, as on the text fields (see TextField.module.css). */
 .select[aria-invalid='true'] {
-  box-shadow: inset 0 0 0 3px var(--ink);
+  border-width: calc(var(--outline-w) + 3px);
+  padding: calc(0.75rem - 3px) calc(2.75em - 3px) calc(0.75rem - 3px) calc(1rem - 3px);
 }
 
 .checkRow {

@@ -879,7 +879,7 @@ test.describe('the control bar', () => {
     await page.setViewportSize({ width: 320, height: 568 });
     await openScreen(page, 'present-leaderboard');
     const boxes = await page
-      .getByRole('toolbar')
+      .getByRole('group', { name: 'Presenter controls' })
       .getByRole('button')
       .evaluateAll((els) =>
         els.map((el) => {
@@ -914,7 +914,10 @@ test.describe('the control bar', () => {
     ];
     for (const [id, present, absent] of cases) {
       await openScreen(page, id);
-      const names = await page.getByRole('toolbar').getByRole('button').allInnerTexts();
+      const names = await page
+        .getByRole('group', { name: 'Presenter controls' })
+        .getByRole('button')
+        .allInnerTexts();
       for (const re of present)
         expect(
           names.some((n) => re.test(n)),

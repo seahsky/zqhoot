@@ -4,14 +4,6 @@
   gap: var(--gap);
 }
 
-/* One heavier border for a refused entry, as on the join fields (see Join.module.css). */
-.form input[aria-invalid='true'],
-.form textarea[aria-invalid='true'] {
-  box-shadow: none;
-  border-width: calc(var(--outline-w) + 3px);
-  padding: calc(0.75rem - 3px) calc(1rem - 3px);
-}
-
 .entries {
   display: flex;
   flex-wrap: wrap;

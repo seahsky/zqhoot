@@ -416,6 +416,61 @@ describe('Cognito sign-in', () => {
     expect(await ctx.auth.handleUnauthorized()).toBe(true);
     expect(ctx.auth.getToken()).toBe('ID2');
   });
+
+  it('refusals that arrive together share one refresh', async () => {
+    let n = 0;
+    const server = fakeServer({
+      '/oauth2/token': () => json({ id_token: `ID${++n}`, expires_in: 3600 }),
+      '/api/me': () => json(ME),
+    });
+    const ctx = make({ auth: COGNITO, fetchImpl: server.fetchImpl });
+    ctx.storage.setItem(AUTH_KEY, JSON.stringify({ mode: 'cognito', refreshToken: 'RT' }));
+    await ctx.auth.start('', () => undefined);
+    const tokenCalls = () => server.calls.filter((c) => c.url.endsWith('/oauth2/token')).length;
+    const before = tokenCalls();
+    // A page's requests and its socket can all be refused in the same moment.
+    const answers = await Promise.all([
+      ctx.auth.handleUnauthorized(),
+      ctx.auth.handleUnauthorized(),
+      ctx.auth.handleUnauthorized(),
+    ]);
+    expect(answers).toEqual([true, true, true]);
+    expect(tokenCalls() - before).toBe(1);
+    // Once it has settled, the next refusal is a new problem and refreshes again.
+    await ctx.auth.handleUnauthorized();
+    expect(tokenCalls() - before).toBe(2);
+  });
+
+  it('a refusal in local mode signs the host out with no request at all', async () => {
+    const server = fakeServer({});
+    const ctx = make({ auth: { mode: 'local' }, fetchImpl: server.fetchImpl });
+    await ctx.auth.start('', () => undefined);
+    expect(await ctx.auth.handleUnauthorized()).toBe(false);
+    expect(server.calls).toHaveLength(0);
+    expect(ctx.auth.getSnapshot()).toMatchObject({
+      status: 'signed-out',
+      error: 'Your session ended. Sign in again.',
+    });
+  });
+
+  it('expire() signs out without a refresh, with the reason', async () => {
+    const server = fakeServer({
+      '/oauth2/token': () => json({ id_token: 'ID1', expires_in: 3600 }),
+      '/api/me': () => json(ME),
+    });
+    const ctx = make({ auth: COGNITO, fetchImpl: server.fetchImpl });
+    ctx.storage.setItem(AUTH_KEY, JSON.stringify({ mode: 'cognito', refreshToken: 'RT' }));
+    await ctx.auth.start('', () => undefined);
+    const before = server.calls.length;
+    ctx.auth.expire();
+    expect(server.calls).toHaveLength(before);
+    expect(ctx.auth.getToken()).toBeNull();
+    expect(ctx.storage.getItem(AUTH_KEY)).toBeNull();
+    expect(ctx.auth.getSnapshot()).toMatchObject({
+      status: 'signed-out',
+      error: 'Your session ended. Sign in again.',
+    });
+  });
 });
 
 describe('a mismatch between the stored session and the config', () => {

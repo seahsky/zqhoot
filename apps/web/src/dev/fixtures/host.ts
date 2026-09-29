@@ -15,7 +15,7 @@ import {
   revealSnapshot,
   singleQ,
 } from './hostSnapshots.ts';
-import { hostStateOf, statsFor } from './hostState.ts';
+import { hostStateOf, refusedStateOf, statsFor } from './hostState.ts';
 
 export { HOST_FIXTURE_MESSAGES } from './hostState.ts';
 
@@ -57,6 +57,8 @@ export const HOST_LIVE_FIXTURES = {
   'host-live-reveal': hostStateOf(
     revealSnapshot(singleQ, MERCURY_RESULT, { roster: hostRoster() }, SINGLE_AT),
   ),
+  // The session is another account's: no snapshot, and the page has stopped.
+  'host-live-forbidden': refusedStateOf('forbidden'),
 } satisfies Record<string, HostState>;
 
 export type HostLiveFixtureId = keyof typeof HOST_LIVE_FIXTURES;

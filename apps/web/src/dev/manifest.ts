@@ -76,13 +76,24 @@ export const SCREENS = [
     group: 'present',
   },
   { id: 'present-help', title: 'Present: keyboard help', group: 'present' },
+  {
+    id: 'present-forbidden',
+    title: "Present: the session is another host's",
+    group: 'present',
+  },
 
   { id: 'host-login', title: 'Host: sign in', group: 'host' },
+  { id: 'host-login-error', title: 'Host: sign-in refused', group: 'host' },
   { id: 'host-dashboard', title: 'Host: dashboard', group: 'host' },
   { id: 'host-live-lobby', title: 'Host: live control, lobby', group: 'host' },
   { id: 'host-live-question', title: 'Host: live control, question open', group: 'host' },
   { id: 'host-live-moderation', title: 'Host: live control, moderation queue', group: 'host' },
   { id: 'host-live-reveal', title: 'Host: live control, results', group: 'host' },
+  {
+    id: 'host-live-forbidden',
+    title: "Host: live control, the session is another host's",
+    group: 'host',
+  },
 
   { id: 'edit-quiz', title: 'Edit: quiz and question list', group: 'edit' },
   { id: 'edit-question-single', title: 'Edit: multiple choice question', group: 'edit' },

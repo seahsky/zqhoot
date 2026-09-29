@@ -175,6 +175,24 @@ export function replaceQuestion(draft: QuizDraft, index: number, question: Quest
 }
 
 /**
+ * Removes the picture. Its description goes with it: `imageAlt` without an `imageKey` is
+ * refused by the schema, and a description of nothing has no field to sit in.
+ */
+export function removeQuestionImage(q: Question): Question {
+  const { imageKey: _key, imageAlt: _alt, ...rest } = q;
+  return rest as Question;
+}
+
+/** The description of the picture; an empty one is no description, so the key goes. */
+export function setImageAlt(q: Question, text: string): Question {
+  if (text === '') {
+    const { imageAlt: _alt, ...rest } = q;
+    return rest as Question;
+  }
+  return { ...q, imageAlt: text } as Question;
+}
+
+/**
  * Sets a question's picture by its id. An upload takes seconds, and the host may move, delete
  * or duplicate questions meanwhile, so the position it started at means nothing when it ends.
  * A question that is gone changes nothing.
@@ -190,8 +208,9 @@ export function setQuestionImage(draft: QuizDraft, questionId: string, key: stri
 // ---------------------------------------------------------------------------
 
 /**
- * Switches the type and keeps what still applies: prompt, image and time limit always, and the
- * option texts when both types have options (the first one becomes the correct answer).
+ * Switches the type and keeps what still applies: prompt, image (and its description) and time
+ * limit always, and the option texts when both types have options (the first one becomes the
+ * correct answer).
  */
 export function changeQuestionType(
   q: Question,
@@ -206,6 +225,7 @@ export function changeQuestionType(
     prompt: q.prompt,
     timeLimitSec: q.timeLimitSec,
     ...(q.imageKey !== undefined ? { imageKey: q.imageKey } : {}),
+    ...(q.imageAlt !== undefined ? { imageAlt: q.imageAlt } : {}),
   } as Question;
   const oldOptions = 'options' in q ? q.options : null;
   if (oldOptions && 'options' in carried) {
@@ -353,6 +373,10 @@ export function describeIssue(issue: RawIssue): string {
           : `${q}: write the question.`;
       case 'imageKey':
         return `${q}: the image is not valid. Remove it and add it again.`;
+      case 'imageAlt':
+        return tooBig(issue)
+          ? `${q}: the image description can be at most ${LIMITS.imageAltMax} characters.`
+          : `${q}: the image description needs an image. Add one, or clear the description.`;
       case 'timeLimitSec':
         return `${q}: choose a time limit from the list.`;
       case 'points':
@@ -396,11 +420,20 @@ function issueTarget(path: readonly PathPart[]): PathPart[] {
   return p;
 }
 
+/** A description of only spaces is trimmed to nothing by the schema; it is not worth storing. */
+function withoutBlankAlt(input: QuizInput): QuizInput {
+  if (!input.questions.some((q) => q.imageAlt === '')) return input;
+  return {
+    ...input,
+    questions: input.questions.map((q) => (q.imageAlt === '' ? setImageAlt(q, '') : q)),
+  };
+}
+
 export type ValidationResult = { ok: true; input: QuizInput } | { ok: false; issues: FieldIssue[] };
 
 export function validateDraft(draft: QuizDraft): ValidationResult {
   const parsed = QuizInput.safeParse(draft);
-  if (parsed.success) return { ok: true, input: parsed.data };
+  if (parsed.success) return { ok: true, input: withoutBlankAlt(parsed.data) };
   const seen = new Set<string>();
   const issues: FieldIssue[] = [];
   for (const raw of parsed.error.issues) {

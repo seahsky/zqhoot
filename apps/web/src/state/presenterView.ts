@@ -35,6 +35,8 @@ export interface PresentQuestion {
   type: QuestionType;
   prompt: string;
   imageKey: string | null;
+  /** What the picture shows; null means it is decoration and the prompt says everything. */
+  imageAlt: string | null;
   /** Options of a choice question; True and False for a true/false one; empty otherwise. */
   options: PresentOption[];
   /** Seconds players have; null when the question is untimed. */
@@ -141,6 +143,7 @@ export function presentQuestion(q: Question, index: number, total: number): Pres
     type: q.type,
     prompt: q.prompt,
     imageKey: q.imageKey ?? null,
+    imageAlt: q.imageAlt ?? null,
     timeLimitSec: q.timeLimitSec,
     options: [] as PresentOption[],
     maxEntries: null as number | null,

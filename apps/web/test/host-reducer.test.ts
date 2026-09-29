@@ -392,7 +392,7 @@ describe('errors', () => {
   it('ends the screen for the final errors and then ignores everything', () => {
     for (const [code, ended] of [
       ['unauthorized', 'unauthorized'],
-      ['forbidden', 'unauthorized'],
+      ['forbidden', 'forbidden'],
       ['session-ended', 'session-ended'],
       ['not-found', 'not-found'],
       ['protocol-version', 'out-of-date'],
@@ -401,6 +401,18 @@ describe('errors', () => {
       expect(s.ended, code).toBe(ended);
       expect(apply(s, hostState(hostSnapshot({ sv: 99, locked: true })))).toBe(s);
     }
+  });
+
+  it('forbidden is its own end, not a sign-in that can be refreshed', () => {
+    // A refresh cannot mend it: the session is another account's, and the same hello is
+    // refused again. The page tells the two apart by this state.
+    const forbidden = apply(open(), error('forbidden'));
+    const unauthorized = apply(open(), error('unauthorized'));
+    expect(forbidden.ended).toBe('forbidden');
+    expect(unauthorized.ended).toBe('unauthorized');
+    expect(forbidden.ended).not.toBe(unauthorized.ended);
+    // It also arrives before any snapshot, and ends the screen all the same.
+    expect(apply(initialHostState('open'), error('forbidden')).ended).toBe('forbidden');
   });
 
   it('keeps the screen for a refused command and says why', () => {

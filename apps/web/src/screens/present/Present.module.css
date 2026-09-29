@@ -792,6 +792,9 @@
 }
 
 .reload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: max(24px, calc(var(--u) * 7));
   padding: 0 calc(var(--u) * 3);
   border: var(--outline-w) solid var(--ink);
@@ -800,5 +803,19 @@
   color: var(--bg);
   font-size: calc(var(--u) * 4.5);
   font-weight: 800;
+  text-decoration: none;
   cursor: pointer;
+}
+
+/* The second choice beside a filled one is outlined, as the secondary buttons everywhere are. */
+.reloadSecondary {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.overActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(var(--u) * 2);
 }

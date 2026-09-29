@@ -104,3 +104,114 @@ test.describe('preferences change the design, not just the media query', () => {
     for (const h of rows) expect(h).toBeGreaterThanOrEqual(72);
   });
 });
+
+/**
+ * A field in error is drawn with one heavier border. It used to be the normal border plus an
+ * inset shadow, and two anti-aliased rounded edges beside each other show as a double line at
+ * the corners, most of all with more contrast. The padding gives back what the border takes,
+ * so the text does not move when a field becomes invalid.
+ */
+test.describe('an invalid field is drawn with one border', () => {
+  const MEDIA: Array<[string, Parameters<Page['emulateMedia']>[0]]> = [
+    ['normal', {}],
+    ['high-contrast', { contrast: 'more' }],
+    ['forced-colors', { forcedColors: 'active' }],
+  ];
+
+  /** Gets each screen into the state with an invalid field. */
+  const SCREENS: Array<[string, (page: Page) => Promise<void>]> = [
+    ['join-pin-error', async () => undefined],
+    ['join-nickname-error', async () => undefined],
+    ['host-login-error', async () => undefined],
+    ['edit-errors', async () => undefined],
+    [
+      'play-answer-wordcloud',
+      async (page) => {
+        await page.getByRole('button', { name: 'Send' }).click();
+        await expect(page.locator('input[aria-invalid="true"]')).toBeVisible();
+      },
+    ],
+    [
+      'play-answer-open',
+      async (page) => {
+        await page.getByRole('button', { name: 'Send' }).click();
+        await expect(page.locator('textarea[aria-invalid="true"]')).toBeVisible();
+      },
+    ],
+  ];
+
+  for (const [medium, media] of MEDIA) {
+    for (const [id, reach] of SCREENS) {
+      test(`${id}, ${medium}`, async ({ page }, testInfo) => {
+        await page.emulateMedia(media);
+        await openScreen(page, id);
+        await reach(page);
+        const fields = await page.evaluate(() => {
+          const root = getComputedStyle(document.documentElement);
+          const outline = parseFloat(root.getPropertyValue('--outline-w'));
+          const rem = parseFloat(root.fontSize);
+          return [
+            ...document.querySelectorAll<HTMLElement>(
+              'input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="true"]',
+            ),
+          ].map((el) => {
+            const s = getComputedStyle(el);
+            const px = (v: string) => parseFloat(v);
+            return {
+              tag: el.tagName.toLowerCase(),
+              shadow: s.boxShadow,
+              // The four borders, then border + padding on each axis.
+              borders: [
+                s.borderTopWidth,
+                s.borderRightWidth,
+                s.borderBottomWidth,
+                s.borderLeftWidth,
+              ].map(px),
+              outline,
+              vertical: px(s.borderTopWidth) + px(s.paddingTop),
+              horizontal: px(s.borderLeftWidth) + px(s.paddingLeft),
+              rem,
+            };
+          });
+        });
+        expect(fields.length, `${id} has a field in error`).toBeGreaterThan(0);
+        for (const f of fields) {
+          expect(f.shadow, `${f.tag}: no inset shadow beside the border`).toBe('none');
+          // One border, three pixels heavier than a field's normal one, on every side.
+          expect(f.borders, f.tag).toEqual([
+            f.outline + 3,
+            f.outline + 3,
+            f.outline + 3,
+            f.outline + 3,
+          ]);
+          // Border plus padding is what a normal field has, so the text stays where it was.
+          expect(f.vertical, `${f.tag}: vertical`).toBeCloseTo(f.outline + 0.75 * f.rem, 1);
+          expect(f.horizontal, `${f.tag}: horizontal`).toBeCloseTo(f.outline + f.rem, 1);
+        }
+        await page.screenshot({
+          path: `e2e/screenshots/${testInfo.project.name}-invalid-${medium}/${id}.png`,
+          fullPage: true,
+        });
+      });
+    }
+  }
+
+  test('a field does not change size when it becomes invalid', async ({ page }) => {
+    await openScreen(page, 'play-answer-wordcloud');
+    const field = page.getByLabel('Your word or short phrase');
+    const before = await field.boundingBox();
+    const inner = () =>
+      field.evaluate((el) => {
+        const s = getComputedStyle(el as HTMLElement);
+        return el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
+      });
+    const contentBefore = await inner();
+    await page.getByRole('button', { name: 'Send' }).click();
+    await expect(field).toHaveAttribute('aria-invalid', 'true');
+    const after = await field.boundingBox();
+    expect(after?.width).toBe(before?.width);
+    expect(after?.height).toBe(before?.height);
+    // Content width only shrinks by the extra 3 px of border on each side, given back by padding.
+    expect(await inner()).toBeCloseTo(contentBefore, 0);
+  });
+});

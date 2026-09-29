@@ -115,13 +115,16 @@ export const RENDERERS: Record<ScreenId, () => ReactNode> = {
   'present-podium': () => <PresentFixtureScreen id="present-podium" />,
   'present-ended-unscored': () => <PresentFixtureScreen id="present-ended-unscored" />,
   'present-help': () => <PresentFixtureScreen id="present-help" />,
+  'present-forbidden': () => <PresentFixtureScreen id="present-forbidden" />,
 
   'host-login': () => <HostLoginFixture />,
+  'host-login-error': () => <HostLoginFixture error="That username or password isn't right." />,
   'host-dashboard': () => <HostDashboardFixture />,
   'host-live-lobby': () => <HostLiveFixture id="host-live-lobby" />,
   'host-live-question': () => <HostLiveFixture id="host-live-question" />,
   'host-live-moderation': () => <HostLiveFixture id="host-live-moderation" />,
   'host-live-reveal': () => <HostLiveFixture id="host-live-reveal" />,
+  'host-live-forbidden': () => <HostLiveFixture id="host-live-forbidden" />,
 
   'edit-quiz': () => <EditorFixture fixture={{ kind: 'quiz' }} />,
   'edit-question-single': () => <EditorFixture fixture={{ kind: 'question', type: 'single' }} />,

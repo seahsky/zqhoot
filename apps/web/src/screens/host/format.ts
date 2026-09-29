@@ -28,3 +28,10 @@ export function playerCountLabel(n: number): string {
 export function questionCountLabel(n: number): string {
   return `${n} ${n === 1 ? 'question' : 'questions'}`;
 }
+
+/** A `host.hello` refused with `forbidden`: the live control and the presenter say the same. */
+export const FORBIDDEN_COPY = {
+  title: 'This session belongs to another host',
+  // Short: on the presenter's stage it has to fit at 150% text size beside two buttons.
+  body: 'It was started from a different account. Sign out to switch, or go back to your own quizzes.',
+};

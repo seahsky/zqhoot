@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { navigate, useRoute } from '../../app/router.tsx';
-import { toHref } from '../../app/routing.ts';
+import { navigate, useNavigationBlocker, useRoute } from '../../app/router.tsx';
+import { parseRoute, toHref } from '../../app/routing.ts';
 import { usePageTitle } from '../../app/usePageTitle.ts';
 import type { HostAuth } from '../../auth/session.ts';
 import { useHostApi } from '../../auth/useHostAuth.ts';
@@ -45,6 +45,19 @@ export function EditPage() {
   );
 }
 
+/** What the host tried to do that would drop the draft, held until they say yes or no. */
+interface Leaving {
+  /** Where a link or Back was going; null for signing out. */
+  to: string | null;
+  proceed: () => void;
+}
+
+/** A link to a blank new quiz, which is where the editor already is on an unsaved new one. */
+function isNewQuizLink(to: string): boolean {
+  const route = parseRoute(to);
+  return route.path === '/edit' && route.query.get('q') === 'new';
+}
+
 interface Loaded {
   /** null for a quiz that has not been saved yet. */
   id: string | null;
@@ -84,7 +97,7 @@ function Editor({
   const [uploadError, setUploadError] = useState<{ questionId: string; message: string } | null>(
     null,
   );
-  const [leaveTarget, setLeaveTarget] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState<Leaving | null>(null);
 
   // --- loading -----------------------------------------------------------------------------
 
@@ -96,15 +109,31 @@ function Editor({
     savedId.current = next.id;
   }, []);
 
+  // Everything about the last quiz that is not the draft itself: open card, error list, save state.
+  const forgetView = useCallback(() => {
+    setOpenIndex(0);
+    setAttempted(false);
+    setSaveStatus('idle');
+    setSaveError(null);
+    setConflict(false);
+    setUploadError(null);
+  }, []);
+
+  const openBlank = useCallback(() => {
+    adopt({ id: null, version: null, draft: newDraft() });
+    forgetView();
+  }, [adopt, forgetView]);
+
   useEffect(() => {
     // A save of a new quiz changes the URL to the new id; the editor already holds that quiz.
     if (savedId.current === quizId) return;
     let cancelled = false;
     setLoadError(null);
     if (isNew) {
-      adopt({ id: null, version: null, draft: newDraft() });
+      openBlank();
       return;
     }
+    forgetView();
     setLoaded(null);
     api
       .getQuiz(quizId)
@@ -117,15 +146,20 @@ function Editor({
     return () => {
       cancelled = true;
     };
-  }, [api, quizId, isNew, adopt]);
+  }, [api, quizId, isNew, adopt, openBlank, forgetView]);
 
   const dirty = draft !== null && saved !== null && isDirty(draft, saved);
 
   // --- leaving with unsaved changes ---------------------------------------------------------
 
+  // Set once the host has answered "leave and lose changes": the page may then go without a second,
+  // native question (sign-out in Cognito mode redirects before the editor has unmounted).
+  const leaveConfirmed = useRef(false);
+
   useEffect(() => {
     if (!dirty) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (leaveConfirmed.current) return;
       // The browser shows its own wording; the assignment is what makes it ask.
       e.preventDefault();
       e.returnValue = '';
@@ -134,14 +168,33 @@ function Editor({
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [dirty]);
 
-  const onLeave = useCallback(
-    (to: string) => {
-      if (!dirty) return true;
-      setLeaveTarget(to);
-      return false;
-    },
-    [dirty],
-  );
+  // Links, Back and Forward all pass through here while there is something to lose. Back and
+  // Forward have already moved the browser; the router walks it back until the host has answered.
+  useNavigationBlocker(dirty ? (t) => setLeaving({ to: t.to, proceed: t.proceed }) : null);
+
+  const signOut = () => {
+    if (dirty) setLeaving({ to: null, proceed: () => auth.signOut() });
+    else auth.signOut();
+  };
+
+  const onConfirmLeave = () => {
+    const held = leaving;
+    setLeaving(null);
+    if (!held) return;
+    if (held.to === null) leaveConfirmed.current = true;
+    // "New quiz" on a quiz that was never saved is a link to the page already open, so there is
+    // no route change to reset the editor: it starts over here.
+    if (
+      held.to !== null &&
+      isNewQuizLink(held.to) &&
+      quizId === 'new' &&
+      savedId.current === null
+    ) {
+      openBlank();
+      return;
+    }
+    held.proceed();
+  };
 
   // --- validation --------------------------------------------------------------------------
 
@@ -183,7 +236,8 @@ function Editor({
       setConflict(false);
       setAttempted(false);
       setSaveStatus('saved');
-      if (wasNew) navigate(toHref('/edit', { q: quiz.id }), { replace: true });
+      // Not a departure: the same quiz at its own address, while the draft still counts as unsaved.
+      if (wasNew) navigate(toHref('/edit', { q: quiz.id }), { replace: true, force: true });
     } catch (err) {
       if (err instanceof ApiRequestError && err.status === 409) {
         setConflict(true);
@@ -297,15 +351,10 @@ function Editor({
       onOverwrite={onOverwrite}
       onFile={(questionId, file) => void onFile(questionId, file)}
       displayName={displayName}
-      onSignOut={() => auth.signOut()}
-      onLeave={onLeave}
-      leaveTarget={leaveTarget}
-      onConfirmLeave={() => {
-        const to = leaveTarget;
-        setLeaveTarget(null);
-        if (to) navigate(to);
-      }}
-      onCancelLeave={() => setLeaveTarget(null)}
+      onSignOut={signOut}
+      leaving={leaving !== null}
+      onConfirmLeave={onConfirmLeave}
+      onCancelLeave={() => setLeaving(null)}
     />
   );
 }

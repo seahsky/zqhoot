@@ -16,7 +16,8 @@ import { HelpOverlay } from './HelpOverlay.tsx';
 import { LobbyView } from './Lobby.tsx';
 import { QuestionView } from './Question.tsx';
 import { RevealScreen } from './Reveal.tsx';
-import { announcementFor } from './announce.ts';
+import { JOIN_ANNOUNCE_MS, announcementFor, joinAnnouncement } from './announce.ts';
+import { useThrottled } from './hooks.ts';
 import s from './Present.module.css';
 
 export interface PresentScreenProps {
@@ -40,6 +41,8 @@ export interface PresentScreenProps {
   onHelpClose: () => void;
   bar: ControlBarProps;
   onReload: () => void;
+  /** Ends the host's sign-in, on the screen that says the session is another account's. */
+  onSignOut: () => void;
 }
 
 function Current(p: PresentScreenProps) {
@@ -85,7 +88,7 @@ function Current(p: PresentScreenProps) {
     case 'thanks':
       return <ThanksScreen view={view} />;
     case 'over':
-      return <OverScreen reason={view.reason} onReload={p.onReload} />;
+      return <OverScreen reason={view.reason} onReload={p.onReload} onSignOut={p.onSignOut} />;
   }
 }
 
@@ -96,12 +99,18 @@ function Current(p: PresentScreenProps) {
  */
 export function PresentScreen(p: PresentScreenProps) {
   const reconnecting = p.connection === 'reconnecting' || p.connection === 'connecting';
+  // Up to 400 players join within seconds; the lobby says who has joined at most every 10 s.
+  const joined = useThrottled(
+    p.view.screen === 'lobby' ? joinAnnouncement(p.view.names.length) : '',
+    JOIN_ANNOUNCE_MS,
+  );
   return (
     <>
       <Stage textScale={p.textScale}>
         <div className={s.pillWrap}>
           <main id="main" tabIndex={-1} className={s.main}>
             <StatusLine visible={false}>{announcementFor(p.view)}</StatusLine>
+            <StatusLine visible={false}>{joined}</StatusLine>
             <Current {...p} />
           </main>
           <p role="status" className={s.pill}>

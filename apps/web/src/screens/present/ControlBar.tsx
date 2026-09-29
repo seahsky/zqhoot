@@ -21,12 +21,16 @@ export interface ControlBarProps extends BarState {
 /**
  * Every keyboard shortcut also has a button here, in a thin bar. "Hide controls" fades the bar
  * for the room; it is still reachable with Tab, and shows itself while it holds focus.
+ *
+ * A labelled group, not a `toolbar`: that role promises arrow keys that move between its
+ * buttons, and here → is the clicker's "next" (ADR-0016) wherever focus is. Every button is in
+ * the Tab order instead.
  */
 export function ControlBar(p: ControlBarProps) {
   return (
     <div
       className={s.bar}
-      role="toolbar"
+      role="group"
       aria-label="Presenter controls"
       data-hidden={p.hidden ? 'true' : undefined}
     >

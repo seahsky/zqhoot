@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { QuizSummary, SessionSummary } from '@zqhoot/protocol';
 import { formatPin } from '../../state/charts.ts';
 import { Button, ButtonLink } from '../../ui/Button.tsx';
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx';
+import { rescueFocus } from '../../ui/focus.ts';
 import { HostShell } from '../../ui/HostShell.tsx';
 import { StatusLine } from '../../ui/StatusLine.tsx';
 import { toHref } from '../../app/routing.ts';
@@ -47,7 +48,12 @@ function QuizCard(p: {
         </p>
       </div>
       <div className={styles.actions}>
-        <Button size="compact" onClick={p.onStart} disabled={p.busy}>
+        {/* aria-disabled, not disabled, while an action runs: a disabled button loses focus. */}
+        <Button
+          size="compact"
+          onClick={() => !p.busy && p.onStart()}
+          aria-disabled={p.busy || undefined}
+        >
           Start session
         </Button>
         <ButtonLink
@@ -61,8 +67,8 @@ function QuizCard(p: {
         <Button
           size="compact"
           variant="secondary"
-          onClick={p.onDuplicate}
-          disabled={p.busy}
+          onClick={() => !p.busy && p.onDuplicate()}
+          aria-disabled={p.busy || undefined}
           aria-label={`Duplicate ${quiz.title}`}
         >
           Duplicate
@@ -70,8 +76,8 @@ function QuizCard(p: {
         <Button
           size="compact"
           variant="secondary"
-          onClick={p.onDelete}
-          disabled={p.busy}
+          onClick={() => !p.busy && p.onDelete()}
+          aria-disabled={p.busy || undefined}
           aria-label={`Delete ${quiz.title}`}
         >
           Delete
@@ -117,8 +123,8 @@ function SessionCard(p: {
         <Button
           size="compact"
           variant="secondary"
-          onClick={p.onDownloadCsv}
-          disabled={p.busy}
+          onClick={() => !p.busy && p.onDownloadCsv()}
+          aria-disabled={p.busy || undefined}
           aria-label={`Download results for ${session.quizTitle} as CSV`}
         >
           Download CSV
@@ -141,9 +147,34 @@ function Problem({ message, onRetry }: { message: string; onRetry: () => void })
   );
 }
 
-/** Quizzes to start, edit, duplicate or delete, and recent sessions to reopen or export. */
+/** How long after a delete the card may still be listed before we stop waiting to move focus. */
+const DELETE_FOCUS_WAIT_MS = 15_000;
+
+/**
+ * Quizzes to start, edit, duplicate or delete, and recent sessions to reopen or export. A deleted
+ * quiz takes its Delete button, which had focus, with it: focus goes to the quiz that took its
+ * place (its first action), or to New quiz when none is left.
+ */
 export function DashboardScreen(p: DashboardScreenProps) {
   const [pendingDelete, setPendingDelete] = useState<QuizSummary | null>(null);
+  const list = useRef<HTMLUListElement>(null);
+  const deleted = useRef<{ id: string; index: number; until: number } | null>(null);
+
+  useEffect(() => {
+    const plan = deleted.current;
+    if (!plan || p.quizzes === null) return;
+    if (Date.now() > plan.until) {
+      deleted.current = null;
+      return;
+    }
+    if (p.quizzes.some((q) => q.id === plan.id)) return; // not gone yet
+    deleted.current = null;
+    const cards = list.current?.querySelectorAll<HTMLElement>(':scope > li') ?? [];
+    const next =
+      cards[Math.min(plan.index, cards.length - 1)]?.querySelector<HTMLElement>('button, a');
+    rescueFocus(next ?? document.querySelector<HTMLElement>('[data-focus="new-quiz"]'));
+  }, [p.quizzes]);
+
   return (
     <HostShell displayName={p.displayName} onSignOut={p.onSignOut}>
       <StatusLine className={styles.statusSlot}>{p.notice}</StatusLine>
@@ -151,7 +182,7 @@ export function DashboardScreen(p: DashboardScreenProps) {
       <section className={styles.section} aria-labelledby="quizzes-title">
         <div className={styles.sectionHead}>
           <h1 id="quizzes-title">Your quizzes</h1>
-          <ButtonLink to="/edit?q=new" size="compact">
+          <ButtonLink to="/edit?q=new" size="compact" data-focus="new-quiz">
             New quiz
           </ButtonLink>
         </div>
@@ -164,7 +195,7 @@ export function DashboardScreen(p: DashboardScreenProps) {
             You have no quizzes yet. Create one, then start a session from here.
           </p>
         ) : (
-          <ul className={styles.list}>
+          <ul className={styles.list} ref={list}>
             {p.quizzes.map((quiz) => (
               <QuizCard
                 key={quiz.id}
@@ -215,7 +246,14 @@ export function DashboardScreen(p: DashboardScreenProps) {
         confirmLabel="Delete quiz"
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => {
-          if (pendingDelete) p.onDelete(pendingDelete.id);
+          if (pendingDelete) {
+            deleted.current = {
+              id: pendingDelete.id,
+              index: p.quizzes?.findIndex((q) => q.id === pendingDelete.id) ?? 0,
+              until: Date.now() + DELETE_FOCUS_WAIT_MS,
+            };
+            p.onDelete(pendingDelete.id);
+          }
           setPendingDelete(null);
         }}
       />

@@ -1,5 +1,6 @@
 import type { PlayerStanding } from '@zqhoot/protocol';
-import type { PlayerView, RevealVariant } from './player.ts';
+import { SLOTS } from '../ui/slots.ts';
+import type { OwnAnswer, PlayerView, RevealVariant } from './player.ts';
 
 /** 1st, 2nd, 3rd, 4th ... 11th, 12th, 13th, 21st. */
 export function ordinal(n: number): string {
@@ -39,10 +40,25 @@ export function revealHeadline(view: Extract<PlayerView, { screen: 'reveal' }>):
   const headlines: Record<RevealVariant, string> = {
     correct: `Correct, +${formatNumber(view.gained)}`,
     incorrect: 'Not this time',
-    unscored: 'Thanks, your response is in',
+    // Not the words of the "answer locked in" screen, which the player has just left.
+    unscored: 'Question closed',
     'no-answer': "You didn't answer this one",
   };
   return headlines[view.variant];
+}
+
+/** What the player sent, as one line for the reveal: "Your answer: B · Pizza". */
+export function ownAnswerLine(answer: OwnAnswer): string {
+  switch (answer.kind) {
+    case 'choice':
+      return `Your answer: ${SLOTS[answer.slot]?.letter ?? answer.slot + 1} · ${answer.text}`;
+    case 'rating':
+      return `Your rating: ${answer.value} of ${answer.max}`;
+    case 'words':
+      return `Your ${answer.entries.length === 1 ? 'word' : 'words'}: ${answer.entries.join(', ')}`;
+    case 'text':
+      return `Your ${answer.entries.length === 1 ? 'response' : 'responses'}: ${answer.entries.join(' · ')}`;
+  }
 }
 
 /**

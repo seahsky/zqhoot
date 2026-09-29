@@ -77,8 +77,10 @@ function revealed(
   question: PublicQuestion,
   result: QuestionResult,
   outcome: PlayerOutcome,
+  /** What the player had sent, as the phone knew it when the question closed. */
+  sent?: AnswerPayload[],
 ): PlayerState {
-  const s = welcome(questionSnapshot(question, 12_000));
+  const s = welcome(questionSnapshot(question, 12_000, sent));
   return send(s, { type: 'reveal', ts: NOW + 10_000, sv: SV + 1, index: 2, result, you: outcome });
 }
 
@@ -140,14 +142,19 @@ export const PLAY_FIXTURES = {
     rank: 6,
     streak: 0,
   }),
-  'play-reveal-unscored': revealed(Q.pollShort, pollResult, {
-    answered: true,
-    points: 0,
-    streakBonus: 0,
-    score: 1240,
-    rank: 4,
-    streak: 0,
-  }),
+  'play-reveal-unscored': revealed(
+    Q.pollShort,
+    pollResult,
+    {
+      answered: true,
+      points: 0,
+      streakBonus: 0,
+      score: 1240,
+      rank: 4,
+      streak: 0,
+    },
+    [{ kind: 'choice', optionId: 'option-park' }],
+  ),
   'play-reveal-no-answer': revealed(Q.singleShort, mercuryResult, {
     answered: false,
     correct: false,

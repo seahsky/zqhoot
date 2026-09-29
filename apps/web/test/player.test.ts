@@ -1504,3 +1504,181 @@ describe('connection status', () => {
     expect(playerReducer(s, { type: 'connection', status: 'open' })).toBe(s);
   });
 });
+
+describe("the player's own answer through the reveal", () => {
+  const revealFor = (
+    result: QuestionResult,
+    you: PlayerOutcome,
+    over: { sv?: number; index?: number } = {},
+  ): ServerMessage => ({
+    type: 'reveal',
+    ts: T0 + 25_000,
+    sv: over.sv ?? 12,
+    index: over.index ?? 2,
+    result,
+    you,
+  });
+  const unscored = outcome({ correct: undefined, points: 0, streak: 0 });
+  const pollResult: QuestionResult = {
+    type: 'poll',
+    answered: 4,
+    totalPlayers: 6,
+    counts: { 'option-cafe': 3, 'option-park': 1 },
+  };
+  const text = (t: string): AnswerPayload => ({ kind: 'text', text: t });
+
+  /** The question opens, the player answers and the server acknowledges, then the reveal comes. */
+  function played(
+    question: PublicQuestion,
+    result: QuestionResult,
+    ...answers: AnswerPayload[]
+  ): PlayerState {
+    const steps: Array<PlayerAction | ServerMessage> = [
+      welcome(snapshot({ sv: 1 })),
+      questionMsg(question, { sv: 2, openInMs: -1_000 }),
+    ];
+    answers.forEach((a, i) => steps.push(sent(a), ack('accepted', i + 1)));
+    steps.push(revealFor(result, unscored, { sv: 3 }));
+    return run(...steps);
+  }
+
+  it('keeps a poll choice, worded with its letter and text', () => {
+    const s = played(poll, pollResult, choice('option-park'));
+    expect(s.view).toMatchObject({
+      screen: 'reveal',
+      variant: 'unscored',
+      yourAnswer: { kind: 'choice', slot: 1, text: 'Park' },
+    });
+  });
+
+  it('keeps a true/false answer, with the slots the correct answer uses', () => {
+    const result: QuestionResult = {
+      type: 'truefalse',
+      answered: 3,
+      totalPlayers: 4,
+      correct: true,
+      counts: { true: 2, false: 1 },
+    };
+    expect(played(trueFalse, result, { kind: 'boolean', value: false }).view).toMatchObject({
+      yourAnswer: { kind: 'choice', slot: 1, text: 'False' },
+    });
+    expect(played(trueFalse, result, { kind: 'boolean', value: true }).view).toMatchObject({
+      yourAnswer: { kind: 'choice', slot: 0, text: 'True' },
+    });
+  });
+
+  it('keeps a rating with the scale it was on', () => {
+    const result: QuestionResult = {
+      type: 'rating',
+      answered: 4,
+      totalPlayers: 6,
+      histogram: [0, 1, 1, 2, 0],
+      average: 3.5,
+    };
+    expect(played(rating, result, { kind: 'rating', value: 4 }).view).toMatchObject({
+      yourAnswer: { kind: 'rating', value: 4, max: 5 },
+    });
+  });
+
+  it('keeps every word of a word cloud and every response to an open question, in order', () => {
+    const cloudResult: QuestionResult = {
+      type: 'wordcloud',
+      answered: 3,
+      totalPlayers: 6,
+      words: [{ text: 'sunny', count: 2 }],
+    };
+    expect(played(cloud, cloudResult, text('sunny'), text('busy')).view).toMatchObject({
+      yourAnswer: { kind: 'words', entries: ['sunny', 'busy'] },
+    });
+    const openResult: QuestionResult = {
+      type: 'open',
+      answered: 2,
+      totalPlayers: 6,
+      responses: [],
+    };
+    expect(played(open, openResult, text('Quieter desks'), text('A window')).view).toMatchObject({
+      yourAnswer: { kind: 'text', entries: ['Quieter desks', 'A window'] },
+    });
+  });
+
+  it('shows nothing when nothing was sent', () => {
+    expect(played(poll, pollResult).view).toMatchObject({ screen: 'reveal', yourAnswer: null });
+  });
+
+  it('does not show an answer the server refused, or one it has not confirmed', () => {
+    const refused = run(
+      welcome(snapshot({ sv: 1 })),
+      questionMsg(poll, { sv: 2, openInMs: -1_000 }),
+      sent(choice('option-park')),
+      ack('rejected', 0, 'too-late'),
+      revealFor(pollResult, unscored, { sv: 3 }),
+    );
+    expect(refused.view).toMatchObject({ yourAnswer: null });
+
+    const unconfirmed = run(
+      welcome(snapshot({ sv: 1 })),
+      questionMsg(poll, { sv: 2, openInMs: -1_000 }),
+      sent(choice('option-park')),
+      revealFor(pollResult, unscored, { sv: 3 }),
+    );
+    expect(unconfirmed.view).toMatchObject({ yourAnswer: null });
+  });
+
+  it('is kept when the reveal is delivered again, and dropped by the next question', () => {
+    const again = playerReducer(played(poll, pollResult, choice('option-cafe')), {
+      type: 'message',
+      msg: revealFor(pollResult, unscored, { sv: 3 }),
+    });
+    expect(again.view).toMatchObject({ yourAnswer: { kind: 'choice', slot: 0, text: 'Cafe' } });
+
+    const next = playerReducer(again, {
+      type: 'message',
+      msg: questionMsg(single, { sv: 4, index: 3, ts: T0 + 30_000, openInMs: -1_000 }),
+    });
+    expect(next.view.screen).toBe('answering');
+    const after = playerReducer(next, {
+      type: 'message',
+      msg: revealFor(singleResult, outcome({ correct: false }), { sv: 5, index: 3 }),
+    });
+    expect(after.view).toMatchObject({ screen: 'reveal', index: 3, yourAnswer: null });
+  });
+
+  it('is not kept across a resume: the snapshot of a reveal does not carry it', () => {
+    const before = played(poll, pollResult, choice('option-park'));
+    expect(before.view).toMatchObject({ yourAnswer: { kind: 'choice' } });
+    const resumed = playerReducer(before, {
+      type: 'message',
+      msg: welcome(
+        snapshot({
+          sv: 20,
+          phase: 'reveal',
+          questionIndex: 2,
+          reveal: { result: pollResult, you: unscored, question: poll },
+        }),
+        T0 + 30_000,
+      ),
+    });
+    // The screen is the reveal all the same, and simply has no answer line.
+    expect(resumed.view).toMatchObject({ screen: 'reveal', variant: 'unscored', yourAnswer: null });
+
+    // A phone that resumed into the reveal from nothing has none either.
+    const cold = run(
+      welcome(
+        snapshot({
+          phase: 'reveal',
+          questionIndex: 2,
+          reveal: { result: pollResult, you: unscored, question: poll },
+        }),
+      ),
+    );
+    expect(cold.view).toMatchObject({ screen: 'reveal', yourAnswer: null });
+  });
+
+  it('keeps what a question-phase resume brought back, through the reveal after it', () => {
+    const s = run(
+      welcome(questionSnap(poll, -1_000, { sv: 5, responses: [choice('option-park')] })),
+      revealFor(pollResult, unscored, { sv: 6 }),
+    );
+    expect(s.view).toMatchObject({ yourAnswer: { kind: 'choice', slot: 1, text: 'Park' } });
+  });
+});

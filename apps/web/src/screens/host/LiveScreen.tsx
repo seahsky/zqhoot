@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import type { HostSnapshot, ModerationStatus } from '@zqhoot/protocol';
 import { formatPin } from '../../state/charts.ts';
 import { nextAction } from '../../state/commands.ts';
@@ -7,12 +7,13 @@ import type { HostState } from '../../state/host.ts';
 import { typeLabel } from '../../state/editor.ts';
 import { Button, ButtonLink } from '../../ui/Button.tsx';
 import { ConfirmDialog } from '../../ui/ConfirmDialog.tsx';
+import { useFocusFallback } from '../../ui/focus.ts';
 import { HostShell } from '../../ui/HostShell.tsx';
 import { StatusLine } from '../../ui/StatusLine.tsx';
 import { Distribution } from './Distribution.tsx';
 import { Moderation } from './Moderation.tsx';
 import { Roster } from './Roster.tsx';
-import { PHASE_LABEL, playerCountLabel } from './format.ts';
+import { FORBIDDEN_COPY, PHASE_LABEL, playerCountLabel } from './format.ts';
 import styles from './Host.module.css';
 
 export interface LiveScreenProps {
@@ -93,12 +94,26 @@ function Controls(p: {
 }) {
   const action = nextAction(p.snap);
   const ended = p.snap.phase === 'ended';
+  const panel = useRef<HTMLElement>(null);
+  // Skip question goes with the question, and End session and Lock joining with the game. When
+  // the one that had focus goes, focus moves to Next, or to the panel's heading when Next is done.
+  const keepFocus = useFocusFallback(
+    panel,
+    (el) =>
+      el.querySelector<HTMLElement>('[data-focus="next"]:not(:disabled)') ?? el.querySelector('h2'),
+  );
   return (
-    <section className={styles.panel} aria-labelledby="control-title">
-      <h2 id="control-title" className={styles.h2}>
+    <section ref={panel} className={styles.panel} aria-labelledby="control-title" {...keepFocus}>
+      <h2 id="control-title" className={styles.h2} tabIndex={-1}>
         Control
       </h2>
-      <Button block onClick={p.onNext} disabled={action.command === null} className={styles.next}>
+      <Button
+        block
+        onClick={p.onNext}
+        disabled={action.command === null}
+        className={styles.next}
+        data-focus="next"
+      >
         {action.label}
       </Button>
       <p className={styles.meta}>{action.hint}</p>
@@ -201,7 +216,14 @@ export function LiveScreen(p: LiveScreenProps) {
         <div className={styles.narrow}>
           <h1>{endedTitle(state.ended)}</h1>
           <p className={styles.lead}>{endedBody(state.ended)}</p>
-          <ButtonLink to="/host">Back to your quizzes</ButtonLink>
+          <div className={styles.actions}>
+            <ButtonLink to="/host">Back to your quizzes</ButtonLink>
+            {state.ended === 'forbidden' && (
+              <Button variant="secondary" onClick={p.onSignOut}>
+                Sign out and switch account
+              </Button>
+            )}
+          </div>
         </div>
       ) : snap === null ? (
         <div className={styles.narrow}>
@@ -256,6 +278,8 @@ function endedTitle(reason: NonNullable<HostState['ended']>): string {
       return "We couldn't find this session";
     case 'unauthorized':
       return 'Your sign-in ended';
+    case 'forbidden':
+      return FORBIDDEN_COPY.title;
     case 'out-of-date':
       return 'This page is out of date';
   }
@@ -269,6 +293,8 @@ function endedBody(reason: NonNullable<HostState['ended']>): string {
       return 'It may have expired, or the link may be wrong.';
     case 'unauthorized':
       return 'Go back to the dashboard and sign in again.';
+    case 'forbidden':
+      return FORBIDDEN_COPY.body;
     case 'out-of-date':
       return 'Reload the page to carry on.';
   }

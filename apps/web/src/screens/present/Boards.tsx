@@ -1,9 +1,11 @@
 import type { CSSProperties } from 'react';
+import { Link } from '../../app/router.tsx';
 import { groupDigits } from '../../state/charts.ts';
 import { ordinal } from '../../state/format.ts';
 import type { HostEnd } from '../../state/host.ts';
 import type { PresenterView, StandingRow } from '../../state/presenterView.ts';
 import { VisuallyHidden } from '../../ui/VisuallyHidden.tsx';
+import { FORBIDDEN_COPY } from '../host/format.ts';
 import { gainText } from './copy.ts';
 import s from './Present.module.css';
 
@@ -161,13 +163,22 @@ const OVER_COPY: Record<HostEnd, { title: string; body: string }> = {
     title: 'Sign in again to show this game',
     body: 'Your sign-in ended. Open the presenter from the host page.',
   },
+  forbidden: FORBIDDEN_COPY,
   'out-of-date': {
     title: 'This page is out of date',
     body: 'Reload it to carry on where the game is.',
   },
 };
 
-export function OverScreen({ reason, onReload }: { reason: HostEnd; onReload: () => void }) {
+export function OverScreen({
+  reason,
+  onReload,
+  onSignOut,
+}: {
+  reason: HostEnd;
+  onReload: () => void;
+  onSignOut: () => void;
+}) {
   const copy = OVER_COPY[reason];
   return (
     <section className={`${s.screen} ${s.centered}`} aria-labelledby="over-title">
@@ -179,6 +190,16 @@ export function OverScreen({ reason, onReload }: { reason: HostEnd; onReload: ()
         <button type="button" className={s.reload} onClick={onReload}>
           Reload
         </button>
+      )}
+      {reason === 'forbidden' && (
+        <div className={s.overActions}>
+          <Link to="/host" className={s.reload}>
+            Back to your quizzes
+          </Link>
+          <button type="button" className={`${s.reload} ${s.reloadSecondary}`} onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
       )}
     </section>
   );

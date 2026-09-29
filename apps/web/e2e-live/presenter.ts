@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { answeredText } from '../src/screens/present/copy.ts';
 
 export interface BarRow {
   letter: string;
@@ -55,7 +56,7 @@ export class Presenter {
 
   /** "3 of 5 answered" appears once the options are open and moves as answers come in. */
   async expectAnswered(n: number, of: number): Promise<void> {
-    await expect(this.page.getByTestId('answer-count')).toHaveText(`${n} of ${of} answered`);
+    await expect(this.page.getByTestId('answer-count')).toHaveText(answeredText(n, of));
   }
 
   /** The reveal screen for a question, whichever way it was closed. */

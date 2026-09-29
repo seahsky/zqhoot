@@ -1,10 +1,10 @@
-import { useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { AnchorHTMLAttributes, MouseEvent } from 'react';
 import { NavigationStore, parseRoute } from './routing.ts';
-import type { Route } from './routing.ts';
+import type { NavigateOptions, NavigationBlocker, Route } from './routing.ts';
 
 export { matchPath, toHref } from './routing.ts';
-export type { Route } from './routing.ts';
+export type { NavigateOptions, NavigationBlocker, Route, Transition } from './routing.ts';
 
 let store: NavigationStore | null = null;
 
@@ -23,8 +23,22 @@ export function useRoute(): Route {
 }
 
 /** `to` must be a same-origin absolute path such as `/play?s=abc`. */
-export function navigate(to: string, opts?: { replace?: boolean }): void {
+export function navigate(to: string, opts?: NavigateOptions): void {
   getStore().navigate(to, opts);
+}
+
+/**
+ * While `blocker` is not null, every navigation (links, `navigate()`, Back and Forward) is held
+ * back and handed to it, to be carried on with by calling `transition.proceed()`.
+ */
+export function useNavigationBlocker(blocker: NavigationBlocker | null): void {
+  const latest = useRef(blocker);
+  latest.current = blocker;
+  const active = blocker !== null;
+  useEffect(() => {
+    if (!active) return;
+    return getStore().block((transition) => latest.current?.(transition));
+  }, [active]);
 }
 
 export interface LinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> {

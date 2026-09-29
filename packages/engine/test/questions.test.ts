@@ -144,6 +144,30 @@ describe('toPublicQuestion', () => {
     expect(Object.keys(pub).sort()).toEqual(['id', 'max', 'prompt', 'timeLimitSec', 'type']);
   });
 
+  it('keeps the image description for hosts: players get the key and nothing that describes it', () => {
+    // The presenter reads the full question from the host snapshot. A phone never draws the
+    // picture, and a description of it can give the answer away ("a photo of Saturn"), so the
+    // player projection stays field by field and leaves the alt text behind.
+    const withAlt: Question = {
+      id: 'q-alt',
+      type: 'single',
+      prompt: 'Which planet is this?',
+      timeLimitSec: 20,
+      imageKey: 'media/abcdef/abcdef.png',
+      imageAlt: 'Saturn, with its rings edge-on',
+      options: [
+        { id: 'a', text: 'Saturn' },
+        { id: 'b', text: 'Mars' },
+      ],
+      correctOptionId: 'a',
+      points: 1,
+    };
+    const pub = toPublicQuestion(withAlt, SETTINGS);
+    expect(pub).toMatchObject({ imageKey: 'media/abcdef/abcdef.png' });
+    expect(pub).not.toHaveProperty('imageAlt');
+    expect(JSON.stringify(pub)).not.toContain('Saturn, with');
+  });
+
   it('does not alias the source options', () => {
     const q = questions()[0] as Question;
     const pub = toPublicQuestion(q, SETTINGS);

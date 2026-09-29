@@ -27,6 +27,16 @@ export function hostStateOf(snapshot: HostSnapshot, ...more: ServerMessage[]): H
   return state;
 }
 
+/** A connection the server refused before any snapshot: the screen for its final error. */
+export function refusedStateOf(code: 'forbidden' | 'unauthorized'): HostState {
+  return feed(initialHostState('closed'), {
+    type: 'error',
+    ts: NOW,
+    code,
+    message: `The server refused this host (${code}).`,
+  });
+}
+
 export const statsFor = (stats: LiveStats, questionIndex = 2): ServerMessage => ({
   type: 'stats',
   ts: NOW,

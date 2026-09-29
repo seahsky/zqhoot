@@ -6,6 +6,7 @@ import {
   openQ,
   openResponses,
   roster,
+  singleImageQ,
   singleQ,
 } from '../src/dev/fixtures/hostSnapshots.ts';
 import { DEFAULT_QUIZ_SETTINGS } from '@zqhoot/protocol';
@@ -203,6 +204,59 @@ test.describe('sign-in, Cognito', () => {
     expect(await page.evaluate(() => sessionStorage.getItem('zqhoot:host:auth'))).toBeNull();
   });
 
+  test('sign-out with unsaved changes asks once, then reaches the logout URL with no native prompt', async ({
+    page,
+    baseURL,
+  }) => {
+    const hostUrl = new URL('/host', baseURL).href;
+    const server = new ScriptedServer();
+    await server.attach(page, { auth });
+    await new HostApi().attach(page);
+    await page.route(`${DOMAIN}/oauth2/token`, (route) =>
+      route.fulfill({
+        json: {
+          id_token: 'ID.TOKEN.1',
+          access_token: 'AT',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        },
+        headers: { 'access-control-allow-origin': '*' },
+      }),
+    );
+    let logouts = 0;
+    await page.route(`${DOMAIN}/logout*`, (route) => {
+      logouts += 1;
+      return route.fulfill({ status: 302, headers: { location: hostUrl } });
+    });
+    await page.addInitScript(() => {
+      // Seeded once: after sign-out the emptied storage must stay empty across the redirect.
+      if (!sessionStorage.getItem('seeded')) {
+        sessionStorage.setItem('seeded', '1');
+        sessionStorage.setItem(
+          'zqhoot:host:auth',
+          JSON.stringify({ mode: 'cognito', refreshToken: 'REFRESH1' }),
+        );
+      }
+    });
+    const native: string[] = [];
+    page.on('dialog', (d) => {
+      native.push(d.type());
+      void d.dismiss();
+    });
+
+    await page.goto('/edit?q=new');
+    await page.getByLabel('Title', { exact: true }).fill('Draft');
+    await page.getByRole('button', { name: 'Sign out' }).click();
+    await page
+      .getByRole('dialog', { name: 'Leave without saving?' })
+      .getByRole('button', { name: 'Leave and lose changes' })
+      .click();
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+    expect(logouts).toBe(1);
+    expect(native).toEqual([]);
+    expect(await page.evaluate(() => sessionStorage.getItem('zqhoot:host:auth'))).toBeNull();
+  });
+
   test('a callback whose state does not match is refused without a token request', async ({
     page,
   }) => {
@@ -297,6 +351,36 @@ test.describe('the dashboard', () => {
     await expect(page.getByRole('heading', { name: 'Product retro', level: 3 })).toHaveCount(0);
   });
 
+  test('deleting a quiz by keyboard leaves focus on the quiz that took its place, then on New quiz', async ({
+    page,
+  }) => {
+    await seeded(page);
+    await page.goto('/host');
+    const active = page.locator(':focus');
+    const confirm = async () => {
+      await expect(page.getByRole('dialog', { name: 'Delete this quiz?' })).toBeVisible();
+      await page.keyboard.press('Tab'); // Cancel has focus first, Delete quiz is next
+      await page.keyboard.press('Enter');
+    };
+    // Newest first: Friday night trivia, then Product retro. Delete the first.
+    await page.getByRole('button', { name: 'Delete Friday night trivia' }).focus();
+    await page.keyboard.press('Enter');
+    await confirm();
+    await expect(page.getByRole('status').filter({ hasText: 'Quiz deleted' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete Friday night trivia' })).toHaveCount(0);
+    // The card that moved up is Product retro: its first action, Start session.
+    await expect(active).toHaveText('Start session');
+    await expect(active.locator('xpath=ancestor::li[1]')).toContainText('Product retro');
+
+    // Deleting the only quiz left has nothing to move to but the way to make another.
+    await page.getByRole('button', { name: 'Delete Product retro' }).focus();
+    await page.keyboard.press('Enter');
+    await confirm();
+    await expect(page.getByText('You have no quizzes yet')).toBeVisible();
+    await expect(active).toHaveText('New quiz');
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+  });
+
   test('downloads results with the bearer header and saves them as a file', async ({ page }) => {
     const { api } = await seeded(page);
     await page.goto('/host');
@@ -345,6 +429,172 @@ test.describe('the dashboard', () => {
     expect(tab.url()).toContain(`/present?s=${SESSION}`);
     // window.open kept the opener's sessionStorage; a noopener link would not have.
     expect(await tab.evaluate(() => sessionStorage.getItem('zqhoot:host:auth'))).toContain(TOKEN);
+  });
+});
+
+test.describe('a host.hello the server refuses', () => {
+  const DOMAIN = 'https://login.example.test';
+  const auth = {
+    mode: 'cognito',
+    region: 'us-east-1',
+    userPoolId: 'us-east-1_x',
+    clientId: 'client-abc',
+    domain: DOMAIN,
+  };
+
+  /** Cognito mode with a refresh token in sessionStorage, and a token endpoint that counts. */
+  async function cognitoHost(page: Page, code: 'forbidden' | 'unauthorized') {
+    const server = new ScriptedServer();
+    await server.attach(page, { auth });
+    server.onClient = (msg, ws) => {
+      if (msg.type === 'host.hello') {
+        server.send(ws, { type: 'error', code, message: `refused: ${code}`, ref: 'host.hello' });
+        // Like the real server, which closes the socket after refusing a hello.
+        void ws.close({ code: 1008 });
+      }
+    };
+    await new HostApi().attach(page);
+    const tokens = { calls: 0 };
+    await page.route(`${DOMAIN}/oauth2/token`, (route) => {
+      tokens.calls += 1;
+      return route.fulfill({
+        json: {
+          id_token: `ID.TOKEN.${tokens.calls}`,
+          access_token: 'AT',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        },
+        headers: { 'access-control-allow-origin': '*' },
+      });
+    });
+    await page.addInitScript(() => {
+      if (!sessionStorage.getItem('zqhoot:host:auth')) {
+        sessionStorage.setItem(
+          'zqhoot:host:auth',
+          JSON.stringify({ mode: 'cognito', refreshToken: 'REFRESH1' }),
+        );
+      }
+    });
+    return { server, tokens };
+  }
+
+  for (const [name, path, heading] of [
+    ['live control', `/host/live?s=${SESSION}`, 'This session belongs to another host'],
+    ['the presenter', `/present?s=${SESSION}`, 'This session belongs to another host'],
+  ] as const) {
+    test(`${name}: forbidden stops for good: one hello, no token refresh, a screen that says why`, async ({
+      page,
+    }) => {
+      const { server, tokens } = await cognitoHost(page, 'forbidden');
+      await page.goto(path);
+      await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+      await expect(page.getByText('from a different account')).toBeVisible();
+      // The link to the dashboard and the way out are on the screen, as real controls.
+      await expect(page.getByRole('link', { name: 'Back to your quizzes' })).toHaveAttribute(
+        'href',
+        '/host',
+      );
+      await expect(page.getByRole('button', { name: /^Sign out/ }).last()).toBeVisible();
+
+      // The one refresh is the sign-in restored from the stored refresh token at page load.
+      const refreshesAtStart = tokens.calls;
+      expect(refreshesAtStart).toBe(1);
+      expect(server.clientMessages('host.hello')).toHaveLength(1);
+      // The unfixed page said hello and refreshed about 45 times a second from here on.
+      await page.waitForTimeout(4_000);
+      expect(server.clientMessages('host.hello')).toHaveLength(1);
+      expect(tokens.calls).toBe(refreshesAtStart);
+      await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+    });
+  }
+
+  test('forbidden: Sign out leaves the page, and the way back is the dashboard', async ({
+    page,
+  }) => {
+    const server = new ScriptedServer();
+    await server.attach(page);
+    server.onClient = (msg, ws) => {
+      if (msg.type === 'host.hello') {
+        server.send(ws, { type: 'error', code: 'forbidden', message: 'no', ref: 'host.hello' });
+      }
+    };
+    await new HostApi().attach(page);
+    await signedIn(page);
+    await page.goto(`/present?s=${SESSION}`);
+    await expect(
+      page.getByRole('heading', { name: 'This session belongs to another host' }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Sign out' }).click();
+    await expect(page.getByRole('heading', { name: 'Host sign-in' })).toBeVisible();
+    expect(await page.evaluate(() => sessionStorage.getItem('zqhoot:host:auth'))).toBeNull();
+    expect(server.clientMessages('host.hello')).toHaveLength(1);
+  });
+
+  test('a token the server keeps refusing gets a few spaced-out refreshes, then the sign-in screen', async ({
+    page,
+  }) => {
+    const { server, tokens } = await cognitoHost(page, 'unauthorized');
+    await page.goto(`/host/live?s=${SESSION}`);
+    // Every refresh waits out the reconnect backoff (under 0.5, 1 and 2 seconds), and after
+    // three refreshes, the next refusal ends it: the host is asked to sign in again.
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('alert')).toContainText('Your session ended');
+    const hellos = server.clientMessages('host.hello').length;
+    // The restore at page load, then at most three refreshes, one per refusal.
+    expect(tokens.calls).toBeLessThanOrEqual(1 + 3);
+    expect(hellos).toBeLessThanOrEqual(1 + 3);
+    expect(hellos).toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(3_000);
+    expect(server.clientMessages('host.hello')).toHaveLength(hellos);
+    expect(tokens.calls).toBeLessThanOrEqual(1 + 3);
+  });
+
+  test('an expired token mends itself: one refresh, a new hello, and the game carries on', async ({
+    page,
+  }) => {
+    const server = new ScriptedServer();
+    await server.attach(page, { auth });
+    let refused = false;
+    server.onClient = (msg, ws) => {
+      if (msg.type !== 'host.hello') return;
+      if (!refused) {
+        refused = true;
+        server.send(ws, {
+          type: 'error',
+          code: 'unauthorized',
+          message: 'expired',
+          ref: 'host.hello',
+        });
+        return;
+      }
+      server.send(ws, {
+        type: 'welcome',
+        role: 'host',
+        snapshot: hostSnapshot({ roster: roster(3) }),
+      });
+    };
+    await new HostApi().attach(page);
+    let refreshes = 0;
+    await page.route(`${DOMAIN}/oauth2/token`, (route) => {
+      refreshes += 1;
+      return route.fulfill({
+        json: { id_token: `ID.TOKEN.${refreshes}`, expires_in: 3600, token_type: 'Bearer' },
+        headers: { 'access-control-allow-origin': '*' },
+      });
+    });
+    await page.addInitScript(() => {
+      sessionStorage.setItem(
+        'zqhoot:host:auth',
+        JSON.stringify({ mode: 'cognito', refreshToken: 'REFRESH1' }),
+      );
+    });
+    await page.goto(`/host/live?s=${SESSION}`);
+    await expect(page.getByText('Waiting to start')).toBeVisible({ timeout: 10_000 });
+    expect(refreshes).toBe(2); // page load, then the one after the refusal
+    const hellos = server.clientMessages('host.hello');
+    expect(hellos).toHaveLength(2);
+    expect(hellos[0]?.authToken).toBe('ID.TOKEN.1');
+    expect(hellos[1]?.authToken).toBe('ID.TOKEN.2');
   });
 });
 
@@ -490,6 +740,201 @@ test.describe('live control', () => {
     await expect(page.getByRole('heading', { name: 'On the big screen (8)' })).toBeVisible();
   });
 
+  test.describe('focus stays in the page after an action removes the control that had it', () => {
+    /** The element with focus; `<body>` means focus was lost, which is what these tests forbid. */
+    const active = (page: Page) => page.locator(':focus');
+    const focusIsOnBody = (page: Page) =>
+      page.evaluate(() => document.activeElement === document.body || !document.activeElement);
+
+    /** A control page whose server keeps the moderation state, as the real one does. */
+    async function moderated(page: Page) {
+      const server = new ScriptedServer();
+      await server.attach(page);
+      const at = Date.now() - 60_000;
+      const responses = openResponses().map((r, i) => ({ ...r, receivedAt: at + i * 1_000 }));
+      server.onClient = (msg, ws) => {
+        if (msg.type === 'host.hello')
+          server.send(ws, { type: 'welcome', role: 'host', snapshot: questionSnap(openQ) });
+        if (msg.type === 'host.moderate') {
+          const r = responses.find((x) => x.id === msg.responseId);
+          if (r) r.status = msg.status as typeof r.status;
+        }
+        if (msg.type === 'host.stats') {
+          server.send(ws, {
+            type: 'stats',
+            questionIndex: 0,
+            stats: { type: 'open', answered: 4, totalPlayers: 3, responses, cursor: null },
+          });
+        }
+      };
+      await new HostApi().attach(page);
+      await signedIn(page);
+      await page.goto(`/host/live?s=${SESSION}`);
+      await expect(page.getByRole('heading', { name: 'Waiting for approval (2)' })).toBeVisible();
+      return server;
+    }
+
+    test('Show and Hide: the response that took its place, or the list heading when it is empty', async ({
+      page,
+    }) => {
+      const server = await moderated(page);
+      // Two are waiting, newest first: Tomas, then Riley.
+      await page.getByRole('button', { name: /Show Tomas's response/ }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('heading', { name: 'Waiting for approval (1)' })).toBeVisible();
+      await expect(active(page)).toHaveAccessibleName(/Show Riley's response/);
+
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('heading', { name: 'Waiting for approval (0)' })).toBeVisible();
+      await expect(active(page)).toHaveText('Waiting for approval (0)');
+      expect(await focusIsOnBody(page)).toBe(false);
+
+      // Mateo is the only response that is hidden: showing him empties that list too.
+      await page.getByRole('button', { name: /Show Mateo's response/ }).focus();
+      await page.keyboard.press('Enter');
+      await expect(active(page)).toHaveText('Hidden (0)');
+
+      // Hiding the oldest visible response, which is last in its list: focus goes to the new last.
+      await page.getByRole('button', { name: /Hide Ana's response/ }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('heading', { name: /^Hidden \(1\)$/ })).toBeVisible();
+      await expect(active(page)).toHaveAccessibleName(/Hide Jo's response/);
+      // Every press went to the server, and nothing left focus on the page's <body>.
+      expect(server.clientMessages('host.moderate')).toHaveLength(4);
+      expect(await focusIsOnBody(page)).toBe(false);
+    });
+
+    test('Show with the mouse lands focus on the next response too', async ({ page }) => {
+      await moderated(page);
+      await page.getByRole('button', { name: /Show Tomas's response/ }).click();
+      await expect(active(page)).toHaveAccessibleName(/Show Riley's response/);
+    });
+
+    test('a focus the host has already moved elsewhere is not taken back', async ({ page }) => {
+      const server = new ScriptedServer();
+      await server.attach(page);
+      hostServer(server, () => questionSnap(singleQ));
+      const hello = server.onClient;
+      let release: () => void = () => undefined;
+      const kicked = new Promise<void>((resolve) => (release = resolve));
+      server.onClient = (msg, ws) => {
+        hello(msg, ws);
+        if (msg.type === 'host.kick') {
+          // The server takes its time: the row is still there when the host moves on.
+          void kicked.then(() =>
+            server.send(ws, { type: 'roster', upsert: [], removed: [msg.playerId as string] }),
+          );
+        }
+      };
+      await new HostApi().attach(page);
+      await signedIn(page);
+      await page.goto(`/host/live?s=${SESSION}`);
+      const top = roster(3)[2]!.nickname;
+      await page.getByRole('button', { name: `Kick ${top}` }).focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('dialog').getByRole('button', { name: 'Remove player' }).click();
+      await expect.poll(() => server.clientMessages('host.kick').length).toBe(1);
+      await page.getByRole('button', { name: 'Lock joining' }).focus();
+
+      release();
+      await expect(page.getByRole('button', { name: `Kick ${top}` })).toHaveCount(0);
+      await expect(active(page)).toHaveAccessibleName('Lock joining');
+    });
+
+    test('Kick: the next row’s Kick button, and the search box after the last row', async ({
+      page,
+    }) => {
+      const server = new ScriptedServer();
+      await server.attach(page);
+      hostServer(server, () => questionSnap(singleQ));
+      const kick = server.onClient;
+      server.onClient = (msg, ws) => {
+        kick(msg, ws);
+        if (msg.type === 'host.kick') {
+          server.send(ws, { type: 'roster', upsert: [], removed: [msg.playerId as string] });
+        }
+      };
+      await new HostApi().attach(page);
+      await signedIn(page);
+      await page.goto(`/host/live?s=${SESSION}`);
+      const names = roster(3).map((r) => r.nickname); // listed newest first: the last is on top
+      const [first, second, third] = [names[2], names[1], names[0]] as string[];
+      await expect(page.getByTestId('roster')).toContainText(first!);
+
+      // Kick the top row: focus goes to the row that follows it.
+      const kickButton = (name: string) => page.getByRole('button', { name: `Kick ${name}` });
+      await kickButton(first!).focus();
+      await page.keyboard.press('Enter');
+      await page.getByRole('dialog').getByRole('button', { name: 'Remove player' }).click();
+      await expect(kickButton(first!)).toHaveCount(0);
+      await expect(active(page)).toHaveAccessibleName(`Kick ${second}`);
+
+      // Kick the middle one, by keyboard from the dialog: again the row that follows.
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Enter');
+      await expect(kickButton(second!)).toHaveCount(0);
+      await expect(active(page)).toHaveAccessibleName(`Kick ${third}`);
+
+      // The last row has no next one: the search box.
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Enter');
+      await expect(kickButton(third!)).toHaveCount(0);
+      await expect(active(page)).toHaveAccessibleName('Find a player');
+      expect(server.clientMessages('host.kick')).toHaveLength(3);
+      expect(await focusIsOnBody(page)).toBe(false);
+    });
+
+    test('Skip question and End session: focus moves to Next, or to the Control heading when it is done', async ({
+      page,
+    }) => {
+      const server = new ScriptedServer();
+      await server.attach(page);
+      let snapshot: Record<string, unknown> = questionSnap(singleQ);
+      server.onClient = (msg, ws) => {
+        if (msg.type === 'host.hello') server.send(ws, { type: 'welcome', role: 'host', snapshot });
+        if (msg.type === 'host.skip' || msg.type === 'host.end') {
+          snapshot = {
+            ...snapshot,
+            sv: (snapshot.sv as number) + 1,
+            phase: msg.type === 'host.skip' ? 'reveal' : 'ended',
+            ...(msg.type === 'host.skip'
+              ? {
+                  result: {
+                    type: 'single',
+                    answered: 3,
+                    totalPlayers: 3,
+                    correctOptionId: 'option-mercury',
+                    counts: { 'option-mercury': 3 },
+                  },
+                }
+              : { question: undefined, podium: [] }),
+          };
+          server.send(ws, { type: 'host.state', snapshot });
+        }
+      };
+      await new HostApi().attach(page);
+      await signedIn(page);
+      await page.goto(`/host/live?s=${SESSION}`);
+
+      await page.getByRole('button', { name: 'Skip question' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('button', { name: 'Skip question' })).toHaveCount(0);
+      await expect(active(page)).toHaveText('Leaderboard');
+      expect(await focusIsOnBody(page)).toBe(false);
+
+      await page.getByRole('button', { name: 'End session' }).focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Tab');
+      await page.keyboard.press('Enter');
+      await expect(page.getByText('Ended', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'End session' })).toHaveCount(0);
+      // Next has nothing left to do, so it cannot hold focus: the panel's heading does.
+      await expect(active(page)).toHaveText('Control');
+    });
+  });
+
   test('closes a question by itself at the deadline, once', async ({ page }) => {
     const server = await control(page, () =>
       questionSnap(singleQ, { openInMs: -500, limitMs: 1_500 }),
@@ -532,6 +977,102 @@ test.describe('the presenter', () => {
     });
     // Nothing was injected as markup: the QR is an image, not inline SVG.
     expect(await page.locator('svg[shape-rendering]').count()).toBe(0);
+  });
+
+  test("the question's picture is described in the host's words, or is decoration without them", async ({
+    page,
+  }) => {
+    const server = await present(page, () => questionSnap(singleImageQ, { limitMs: null }));
+    const picture = page.getByTestId('stage').locator('img');
+    await expect(picture).toHaveAttribute('alt', singleImageQ.imageAlt as string);
+    await expect(page.getByRole('img', { name: singleImageQ.imageAlt as string })).toBeVisible();
+
+    // The next question has a picture and no description: an empty alt, so a screen reader
+    // skips it and the prompt carries the question.
+    const next = questionSnap({ ...singleImageQ, imageAlt: undefined }, { limitMs: null });
+    server.send(server.last, {
+      type: 'host.state',
+      snapshot: { ...next, sv: (next.sv as number) + 1 },
+    });
+    await expect(picture).toHaveAttribute('alt', '');
+    await expect(page.getByRole('img')).toHaveCount(0);
+  });
+
+  test('the lobby says the PIN once, and who has joined at most every ten seconds, without the PIN', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    // Every change to what a live region says, with when it happened.
+    await page.addInitScript(() => {
+      const heard: Array<{ at: number; text: string }> = [];
+      (window as unknown as { __heard: typeof heard }).__heard = heard;
+      const last = new WeakMap<Element, string>();
+      new MutationObserver(() => {
+        for (const el of document.querySelectorAll('[role="status"]')) {
+          const text = (el.textContent ?? '').trim();
+          if (text !== (last.get(el) ?? '')) {
+            last.set(el, text);
+            if (text) heard.push({ at: performance.now(), text });
+          }
+        }
+      }).observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    const server = await present(page, () => hostSnapshot({ roster: [] }));
+    await expect(page.getByTestId('pin')).toBeVisible();
+
+    // Three players join within a moment.
+    const join = (i: number) =>
+      server.send(server.last, { type: 'roster', upsert: roster(3).slice(i, i + 1), removed: [] });
+    join(0);
+    await page.waitForTimeout(150);
+    join(1);
+    await page.waitForTimeout(150);
+    join(2);
+    await expect(page.getByTestId('player-count')).toHaveText('3 players');
+
+    // The first join is heard at once; the rest wait for the ten seconds to pass.
+    type Heard = Array<{ at: number; text: string }>;
+    const readHeard = async () =>
+      (await page.evaluate(() => (window as never as { __heard: Heard }).__heard)).filter((h) =>
+        /PIN|joined/.test(h.text),
+      );
+    await expect.poll(async () => (await readHeard()).length, { timeout: 20_000 }).toBe(3);
+    const heard = await readHeard();
+    expect(heard.map((h) => h.text)).toEqual([
+      'Lobby. PIN 4 8 2 9 1 5.',
+      '1 player has joined.',
+      '3 players have joined.',
+    ]);
+    // "2 players" was never said: it was replaced before its turn came.
+    expect(heard[2]!.at - heard[1]!.at).toBeGreaterThanOrEqual(9_500);
+    // The PIN is in one announcement, and no join announcement carries it.
+    expect(heard.filter((h) => /PIN/.test(h.text))).toHaveLength(1);
+    for (const h of heard.slice(1)) expect(h.text).not.toMatch(/\d{3}|PIN/);
+  });
+
+  test('the control bar is a labelled group, and a clicker still advances the game from inside it', async ({
+    page,
+  }) => {
+    const server = await present(page, () => hostSnapshot({ roster: roster(3) }));
+    await expect(page.getByTestId('pin')).toBeVisible();
+    const bar = page.getByRole('group', { name: 'Presenter controls' });
+    await expect(bar).toBeVisible();
+    // Not a toolbar: that role tells a screen reader user that arrows move between its buttons.
+    await expect(page.getByRole('toolbar')).toHaveCount(0);
+
+    // Focus is on a button in the bar, as after a click; → and Page Down are still "next".
+    const size = bar.getByRole('button', { name: /Text size/ });
+    await size.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => server.clientMessages('host.next').length).toBe(1);
+    await page.keyboard.press('PageDown');
+    await expect.poll(() => server.clientMessages('host.next').length).toBe(2);
+    await expect(size).toBeFocused();
+    // Space on a button presses that button, and only that.
+    await page.keyboard.press('Space');
+    await expect(bar.getByRole('button', { name: 'Text size 125%' })).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(server.clientMessages('host.next')).toHaveLength(2);
   });
 
   test('the keyboard map: Space, arrows, Page Down, Enter, L, and nothing for the left arrow', async ({
@@ -659,7 +1200,7 @@ test.describe('the presenter', () => {
     page,
   }) => {
     const server = await present(page, () => hostSnapshot({ roster: roster(2) }));
-    const bar = page.getByRole('toolbar', { name: 'Presenter controls' });
+    const bar = page.getByRole('group', { name: 'Presenter controls' });
     await expect(bar).toBeVisible();
     const names = [
       'Start',
@@ -815,6 +1356,9 @@ test.describe('the presenter', () => {
 });
 
 test.describe('the editor', () => {
+  /** The picture preview: with no description it is decoration, so it has no role to find it by. */
+  const preview = (page: Page) => page.locator('[class*="picture"] img');
+
   async function editor(page: Page, path = '/edit?q=new') {
     const server = new ScriptedServer();
     await server.attach(page);
@@ -1066,6 +1610,289 @@ test.describe('the editor', () => {
     await expect(page).toHaveURL(/\/host$/);
   });
 
+  test.describe('leaving with unsaved changes by other ways than a link', () => {
+    const leaveDialog = (page: Page) => page.getByRole('dialog', { name: 'Leave without saving?' });
+    const title = (page: Page) => page.getByLabel('Title', { exact: true });
+
+    /** The dashboard, then a new quiz opened from its header, with `Draft` typed into the title. */
+    async function draftFromDashboard(page: Page) {
+      await editor(page, '/host');
+      await page
+        .getByRole('navigation', { name: 'Host' })
+        .getByRole('link', { name: 'New quiz' })
+        .click();
+      await expect(page).toHaveURL(/\/edit\?q=new$/);
+      await title(page).fill('Draft');
+      await expect(page.getByRole('status').filter({ hasText: 'Unsaved changes' })).toBeVisible();
+    }
+
+    test('browser Back asks first; Keep editing restores the address and the edits', async ({
+      page,
+    }) => {
+      await draftFromDashboard(page);
+      await page.goBack();
+      await expect(leaveDialog(page)).toBeVisible();
+      await expect(page).toHaveURL(/\/edit\?q=new$/);
+      await expect(page.getByRole('heading', { name: 'Your quizzes' })).toHaveCount(0);
+      await leaveDialog(page).getByRole('button', { name: 'Keep editing' }).click();
+      await expect(leaveDialog(page)).toBeHidden();
+      await expect(page).toHaveURL(/\/edit\?q=new$/);
+      await expect(title(page)).toHaveValue('Draft');
+      await expect(page.getByRole('status').filter({ hasText: 'Unsaved changes' })).toBeVisible();
+
+      // It asks every time, and never stacks history entries while doing so.
+      const before = await page.evaluate(() => window.history.length);
+      await page.goBack();
+      await expect(leaveDialog(page)).toBeVisible();
+      await leaveDialog(page).getByRole('button', { name: 'Keep editing' }).click();
+      await expect(title(page)).toHaveValue('Draft');
+      expect(await page.evaluate(() => window.history.length)).toBe(before);
+    });
+
+    test('browser Back with Leave and lose changes goes where Back goes; Forward finds a fresh editor', async ({
+      page,
+    }) => {
+      await draftFromDashboard(page);
+      await page.goBack();
+      await leaveDialog(page).getByRole('button', { name: 'Leave and lose changes' }).click();
+      await expect(page).toHaveURL(/\/host$/);
+      await expect(page.getByRole('heading', { name: 'Your quizzes' })).toBeVisible();
+
+      await page.goForward();
+      await expect(page).toHaveURL(/\/edit\?q=new$/);
+      await expect(title(page)).toHaveValue('');
+      // Nothing to lose now, so Back does not ask.
+      await page.goBack();
+      await expect(page).toHaveURL(/\/host$/);
+      await expect(leaveDialog(page)).toHaveCount(0);
+    });
+
+    test('browser Forward asks first, too', async ({ page }) => {
+      await editor(page, '/host');
+      await page
+        .getByRole('navigation', { name: 'Host' })
+        .getByRole('link', { name: 'New quiz' })
+        .click();
+      await page.getByRole('link', { name: 'Quizzes' }).click();
+      await expect(page).toHaveURL(/\/host$/);
+      await page.goBack();
+      await expect(page).toHaveURL(/\/edit\?q=new$/);
+      await title(page).fill('Forward test');
+
+      await page.goForward();
+      await expect(leaveDialog(page)).toBeVisible();
+      await expect(page).toHaveURL(/\/edit\?q=new$/);
+      await leaveDialog(page).getByRole('button', { name: 'Keep editing' }).click();
+      await expect(title(page)).toHaveValue('Forward test');
+    });
+
+    test('Sign out asks first, and signs out only when the changes may be lost', async ({
+      page,
+    }) => {
+      await draftFromDashboard(page);
+      await page.getByRole('button', { name: 'Sign out' }).click();
+      await expect(leaveDialog(page)).toBeVisible();
+      await leaveDialog(page).getByRole('button', { name: 'Keep editing' }).click();
+      await expect(title(page)).toHaveValue('Draft');
+      expect(await page.evaluate(() => sessionStorage.getItem('zqhoot:host:auth'))).not.toBeNull();
+
+      await page.getByRole('button', { name: 'Sign out' }).click();
+      await leaveDialog(page).getByRole('button', { name: 'Leave and lose changes' }).click();
+      await expect(page.getByRole('heading', { name: 'Host sign-in' })).toBeVisible();
+      expect(await page.evaluate(() => sessionStorage.getItem('zqhoot:host:auth'))).toBeNull();
+    });
+
+    test('Sign out does not ask when nothing would be lost', async ({ page }) => {
+      await editor(page);
+      await page.getByRole('button', { name: 'Sign out' }).click();
+      await expect(page.getByRole('heading', { name: 'Host sign-in' })).toBeVisible();
+    });
+
+    test('New quiz on an unsaved new quiz, confirmed, starts a blank one', async ({ page }) => {
+      await editor(page);
+      await title(page).fill('Draft A');
+      await page.getByLabel('Question', { exact: true }).fill('A question I typed');
+      // A save that is refused (the answers are empty) leaves the error list on screen.
+      await page.getByRole('button', { name: 'Save quiz' }).first().click();
+      await expect(page.getByTestId('error-summary')).toBeVisible();
+
+      const link = page.getByRole('link', { name: 'New quiz' });
+      await link.click();
+      await expect(leaveDialog(page)).toBeVisible();
+      await leaveDialog(page).getByRole('button', { name: 'Keep editing' }).click();
+      await expect(title(page)).toHaveValue('Draft A');
+
+      await link.click();
+      await leaveDialog(page).getByRole('button', { name: 'Leave and lose changes' }).click();
+      await expect(page).toHaveURL(/\/edit\?q=new$/);
+      await expect(title(page)).toHaveValue('');
+      await expect(page.getByLabel('Question', { exact: true })).toHaveValue('');
+      // A fresh editor: nothing unsaved, no leftover error list, nothing to warn about.
+      await expect(page.getByRole('status').filter({ hasText: 'Unsaved changes' })).toHaveCount(0);
+      await expect(page.getByTestId('error-summary')).toHaveCount(0);
+      await link.click();
+      await expect(leaveDialog(page)).toHaveCount(0);
+      await expect(title(page)).toHaveValue('');
+    });
+  });
+
+  test.describe('focus stays in the editor after an action removes the control that had it', () => {
+    const active = (page: Page) => page.locator(':focus');
+    const focusIsOnBody = (page: Page) =>
+      page.evaluate(() => document.activeElement === document.body || !document.activeElement);
+    const order = (page: Page) =>
+      page.locator('[data-question] [class*="preview"]').allTextContents();
+
+    /** A quiz of three questions, each with a prompt the tests can tell apart. */
+    async function threeQuestions(page: Page) {
+      await editor(page);
+      await fillFirstQuestion(page);
+      for (const prompt of ['Second question', 'Third question']) {
+        await page.getByLabel('New question type').selectOption({ label: 'Rating' });
+        await page.getByRole('button', { name: 'Add question' }).click();
+        await page.getByLabel('Question', { exact: true }).fill(prompt);
+      }
+      expect(await order(page)).toEqual([
+        'Which planet is closest to the Sun?',
+        'Second question',
+        'Third question',
+      ]);
+    }
+
+    test('Remove answer: the answer that took its place, or the one before when it was last', async ({
+      page,
+    }) => {
+      await editor(page);
+      await fillFirstQuestion(page);
+      await page.getByRole('button', { name: 'Remove answer B' }).focus();
+      await page.keyboard.press('Enter');
+      // B is gone; what was C is B now, and holds focus.
+      await expect(page.getByLabel('Answer B', { exact: true })).toHaveValue('Earth');
+      await expect(page.locator('#f-questions-0-options-1-text')).toBeFocused();
+
+      // Three answers left: removing the last one (C, which is Mars now) hands focus to the one before.
+      await page.getByRole('button', { name: 'Remove answer C' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByLabel('Answer C', { exact: true })).toHaveCount(0);
+      await expect(page.locator('#f-questions-0-options-1-text')).toBeFocused();
+      // Two answers are the least, so Remove is gone; focus is on an answer, not on <body>.
+      await expect(page.getByRole('button', { name: /^Remove answer/ })).toHaveCount(0);
+      expect(await focusIsOnBody(page)).toBe(false);
+    });
+
+    test('Add answer: the new answer, also when it was the last one allowed', async ({ page }) => {
+      await editor(page);
+      await page.getByLabel('New question type').selectOption({ label: 'Poll' });
+      await page.getByRole('button', { name: 'Add question' }).click();
+      await page.getByRole('button', { name: 'Add answer' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByLabel('Answer E', { exact: true })).toBeFocused();
+      await page.getByRole('button', { name: 'Add answer' }).focus();
+      await page.keyboard.press('Enter');
+      // Six is the most a poll takes, so Add answer is gone with its focus.
+      await expect(page.getByRole('button', { name: 'Add answer' })).toHaveCount(0);
+      await expect(page.getByLabel('Answer F', { exact: true })).toBeFocused();
+    });
+
+    test('Move up and Move down: focus stays on the same button of the moved card, also at either end', async ({
+      page,
+    }) => {
+      await threeQuestions(page);
+      const card = (n: number) => page.locator(`[data-question="${n}"]`);
+
+      // Down from the top: the card is now second, and its Move down button still has focus.
+      await page.getByRole('button', { name: 'Move down, question 1' }).focus();
+      await page.keyboard.press('Enter');
+      expect(await order(page)).toEqual([
+        'Second question',
+        'Which planet is closest to the Sun?',
+        'Third question',
+      ]);
+      await expect(card(1).getByRole('button', { name: /^Move down/ })).toBeFocused();
+
+      // Down again, to the end: it is the last card, so Move down is a no-op that keeps focus.
+      await page.keyboard.press('Enter');
+      expect(await order(page)).toEqual([
+        'Second question',
+        'Third question',
+        'Which planet is closest to the Sun?',
+      ]);
+      const lastDown = card(2).getByRole('button', { name: /^Move down/ });
+      await expect(lastDown).toBeFocused();
+      await expect(lastDown).toHaveAttribute('aria-disabled', 'true');
+      await page.keyboard.press('Enter');
+      expect(await order(page)).toEqual([
+        'Second question',
+        'Third question',
+        'Which planet is closest to the Sun?',
+      ]);
+      await expect(lastDown).toBeFocused();
+
+      // Up, all the way to the top, on the same button.
+      await card(2)
+        .getByRole('button', { name: /^Move up/ })
+        .focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Enter');
+      expect(await order(page)).toEqual([
+        'Which planet is closest to the Sun?',
+        'Second question',
+        'Third question',
+      ]);
+      const topUp = card(0).getByRole('button', { name: /^Move up/ });
+      await expect(topUp).toBeFocused();
+      await expect(topUp).toHaveAttribute('aria-disabled', 'true');
+      await page.keyboard.press('Enter'); // still a no-op, and no error
+      await expect(topUp).toBeFocused();
+      expect(await order(page)).toHaveLength(3);
+    });
+
+    test('Delete question: the next card’s summary, or Add question after the last', async ({
+      page,
+    }) => {
+      await threeQuestions(page);
+      const confirm = async () => {
+        await expect(page.getByRole('dialog', { name: 'Delete this question?' })).toBeVisible();
+        await page.keyboard.press('Tab'); // Cancel has focus first, Delete question is next
+        await page.keyboard.press('Enter');
+      };
+
+      // The middle one: the third question is second now, and its summary has focus.
+      await page.getByRole('button', { name: 'Delete, question 2' }).focus();
+      await page.keyboard.press('Enter');
+      await confirm();
+      expect(await order(page)).toEqual(['Which planet is closest to the Sun?', 'Third question']);
+      await expect(active(page)).toHaveAttribute('data-focus', 'summary');
+      await expect(active(page)).toContainText('Third question');
+
+      // The last one has no next card: the control that adds one.
+      await page.getByRole('button', { name: 'Delete, question 2' }).focus();
+      await page.keyboard.press('Enter');
+      await confirm();
+      expect(await order(page)).toEqual(['Which planet is closest to the Sun?']);
+      await expect(page.getByRole('button', { name: 'Add question' })).toBeFocused();
+      expect(await focusIsOnBody(page)).toBe(false);
+    });
+
+    test('Remove image: focus goes to the file input, which stays', async ({ page }) => {
+      await editor(page);
+      await page.getByLabel('Image (optional)').focus();
+      await page.getByLabel('Image (optional)').setInputFiles({
+        name: 'planet.png',
+        mimeType: 'image/png',
+        buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      });
+      await expect(preview(page)).toBeVisible();
+      // The upload disables the input while it runs; it has focus again by now.
+      await expect(page.getByLabel('Image (optional)')).toBeFocused();
+      await page.getByRole('button', { name: 'Remove image' }).focus();
+      await page.keyboard.press('Enter');
+      await expect(preview(page)).toHaveCount(0);
+      await expect(page.getByLabel('Image (optional)')).toBeFocused();
+      expect(await focusIsOnBody(page)).toBe(false);
+    });
+  });
+
   test('an upload that ends after the questions were reordered lands on the question it was for', async ({
     page,
   }) => {
@@ -1086,7 +1913,7 @@ test.describe('the editor', () => {
     await expect.poll(() => api.calledWith('POST', '/api/media/uploads').length).toBe(1);
     await page.getByRole('button', { name: 'Move down, question 1' }).click();
     release();
-    await expect(page.getByRole('img', { name: /Preview of this question/ })).toBeVisible();
+    await expect(preview(page)).toBeVisible();
 
     await page.getByRole('button', { name: 'Save quiz' }).first().click();
     await expect(page).toHaveURL(/quiz-new-0001$/);
@@ -1162,7 +1989,7 @@ test.describe('the editor', () => {
       mimeType: 'image/png',
       buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     });
-    await expect(page.getByRole('img', { name: /Preview of this question/ })).toBeVisible();
+    await expect(preview(page)).toBeVisible();
     expect(api.calledWith('POST', '/api/media/uploads')[0]?.body).toEqual({
       contentType: 'image/png',
       size: 8,
@@ -1180,6 +2007,76 @@ test.describe('the editor', () => {
 
     // Remove image.
     await page.getByRole('button', { name: 'Remove image' }).click();
-    await expect(page.getByRole('img', { name: /Preview of this question/ })).toHaveCount(0);
+    await expect(preview(page)).toHaveCount(0);
+  });
+
+  test('a picture gets a description field with a counter; the preview and the saved quiz follow it', async ({
+    page,
+  }) => {
+    const { api } = await editor(page);
+    await fillFirstQuestion(page);
+    // No picture, no description to write.
+    await expect(page.getByLabel('Image description')).toHaveCount(0);
+    await page.getByLabel('Image (optional)').setInputFiles({
+      name: 'planet.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    });
+    await expect(preview(page)).toBeVisible();
+    const field = page.getByLabel('Image description');
+    await expect(field).toBeVisible();
+    await expect(field).toHaveAccessibleDescription(/if the question depends on it/);
+    await expect(field).toHaveAccessibleDescription(/0 \/ 150/);
+    // Undescribed, the preview is decoration: an empty alt, and no role to be announced by.
+    await expect(preview(page)).toHaveAttribute('alt', '');
+
+    await field.fill('A gas giant with a wide, bright ring system');
+    await expect(field).toHaveAccessibleDescription(/43 \/ 150/);
+    await expect(preview(page)).toHaveAttribute(
+      'alt',
+      'A gas giant with a wide, bright ring system',
+    );
+
+    await page.getByRole('button', { name: 'Save quiz' }).first().click();
+    await expect(page).toHaveURL(/quiz-new-0001$/);
+    const saved = (
+      api.calledWith('POST', '/api/quizzes')[0]?.body as {
+        questions: Array<{ imageKey?: string; imageAlt?: string }>;
+      }
+    ).questions[0];
+    expect(saved).toMatchObject({
+      imageKey: 'media/host-abc/uploaded01.png',
+      imageAlt: 'A gas giant with a wide, bright ring system',
+    });
+
+    // Removing the picture takes the description with it, so the next save is still valid.
+    await page.getByRole('button', { name: 'Remove image' }).click();
+    await expect(page.getByLabel('Image description')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Save quiz' }).first().click();
+    await expect(page.getByRole('status').filter({ hasText: 'All changes saved' })).toBeVisible();
+    const put = api.calledWith('PUT', '/api/quizzes/quiz-new-0001').at(-1)?.body as {
+      quiz: { questions: Array<Record<string, unknown>> };
+    };
+    expect(put.quiz.questions[0]).not.toHaveProperty('imageKey');
+    expect(put.quiz.questions[0]).not.toHaveProperty('imageAlt');
+  });
+
+  test('a description over the limit is refused with a message on its own field', async ({
+    page,
+  }) => {
+    const { api } = await editor(page);
+    await fillFirstQuestion(page);
+    await page.getByLabel('Image (optional)').setInputFiles({
+      name: 'planet.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    });
+    await page.getByLabel('Image description').fill('x'.repeat(151));
+    await page.getByRole('button', { name: 'Save quiz' }).first().click();
+    await expect(page.getByTestId('error-summary')).toContainText(
+      'the image description can be at most 150 characters',
+    );
+    await expect(page.locator('#f-questions-0-imageAlt')).toHaveAttribute('aria-invalid', 'true');
+    expect(api.calledWith('POST', '/api/quizzes')).toHaveLength(0);
   });
 });

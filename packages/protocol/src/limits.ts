@@ -32,6 +32,8 @@ export const LIMITS = {
   ratingMaxMin: 3,
   ratingMaxMax: 10,
   ratingLabelMax: 40,
+  /** Text alternative of a question's picture (`imageAlt`), in characters. */
+  imageAltMax: 150,
   readSecondsMax: 10,
   maxPlayersDefault: 500,
   /** Hard cap for any client->server WebSocket message, in UTF-8 bytes. */

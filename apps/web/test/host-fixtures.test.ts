@@ -60,6 +60,8 @@ describe('fixture nicknames', () => {
 describe('one game, one player total', () => {
   it('every host-live fixture has the same room, and its figures count exactly that room', () => {
     for (const [id, state] of Object.entries(HOST_LIVE_FIXTURES)) {
+      // A refused connection (the forbidden screen) never joined the room.
+      if (state.ended !== null) continue;
       expect(state.roster, id).toHaveLength(PLAYERS);
       for (const n of playersCounted(state)) expect(n, id).toBe(PLAYERS);
     }

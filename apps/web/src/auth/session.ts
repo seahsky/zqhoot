@@ -81,6 +81,7 @@ export class HostAuth {
   private tokens: Tokens | null = null;
   private started = false;
   private timer: unknown = null;
+  private refreshing: Promise<boolean> | null = null;
   private readonly listeners = new Set<() => void>();
   private readonly now: () => number;
   private readonly fetchImpl: typeof fetch;
@@ -349,10 +350,23 @@ export class HostAuth {
    * A request came back 401. Cognito: the ID token may simply have expired, so try the refresh
    * token once. Returns whether the caller may retry.
    */
-  async handleUnauthorized(): Promise<boolean> {
+  handleUnauthorized(): Promise<boolean> {
+    // Several requests can be refused at once (a page's calls, a socket); one refresh serves all.
+    this.refreshing ??= this.refreshOrDrop().finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+
+  private async refreshOrDrop(): Promise<boolean> {
     if (this.o.auth.mode === 'cognito' && (await this.refresh())) return true;
     this.dropSession('Your session ended. Sign in again.');
     return false;
+  }
+
+  /** The sign-in keeps being refused: show the sign-in screen instead of trying again. */
+  expire(): void {
+    this.dropSession('Your session ended. Sign in again.');
   }
 
   /** Forget the tokens without leaving the page. */

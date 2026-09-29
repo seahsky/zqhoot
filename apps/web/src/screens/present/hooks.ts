@@ -44,28 +44,30 @@ export function usePersistentChoice<T extends string | number>(
 
 /**
  * At most one update per `ms`: the value shown now, and the latest one a moment later. Used
- * for the `role="status"` chart summaries, which must not chatter (WCAG 4.1.3, ADR-0016).
+ * for the `role="status"` chart summaries, which must not chatter (WCAG 4.1.3, ADR-0016), and
+ * for who has joined the lobby. The first value, at mount, is not an update: the first change
+ * after it is shown at once.
  */
 export function useThrottled<T>(value: T, ms: number): T {
   const [shown, setShown] = useState(value);
+  const onScreen = useRef(value);
   const lastAt = useRef(0);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Nothing new to say (a value that came back before its turn): nothing to space out.
+    if (Object.is(value, onScreen.current)) return;
+    const show = () => {
+      lastAt.current = Date.now();
+      onScreen.current = value;
+      setShown(value);
+    };
     const since = Date.now() - lastAt.current;
     if (since >= ms) {
-      lastAt.current = Date.now();
-      setShown(value);
+      show();
       return;
     }
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      lastAt.current = Date.now();
-      setShown(value);
-    }, ms - since);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
+    const timer = setTimeout(show, ms - since);
+    return () => clearTimeout(timer);
   }, [value, ms]);
 
   return shown;

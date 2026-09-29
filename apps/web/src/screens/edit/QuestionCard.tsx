@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { LIMITS } from '@zqhoot/protocol';
 import type { PointsMultiplier, Question, QuestionType } from '@zqhoot/protocol';
 import {
@@ -11,6 +12,8 @@ import {
   fieldId,
   hasPointsChoice,
   removeOption,
+  removeQuestionImage,
+  setImageAlt,
   timeLimitLabel,
   typeLabel,
 } from '../../state/editor.ts';
@@ -61,6 +64,14 @@ function OptionsEditor({
   errorOf: QuestionCardProps['errorOf'];
   onChange: (q: Question) => void;
 }) {
+  // Removing an answer takes the Remove button that has focus with it, and adding the last one
+  // takes Add answer: focus goes to the answer that is now where the host was working.
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (focusIndex === null) return;
+    setFocusIndex(null);
+    document.getElementById(fieldId(['questions', index, 'options', focusIndex, 'text']))?.focus();
+  }, [focusIndex, index]);
   return (
     <div className={styles.options}>
       <h4 className={styles.h4}>Answers</h4>
@@ -95,7 +106,11 @@ function OptionsEditor({
                     <Button
                       size="compact"
                       variant="secondary"
-                      onClick={() => onChange(removeOption(q, j))}
+                      onClick={() => {
+                        onChange(removeOption(q, j));
+                        // The answer that took its place, or the one before when this was last.
+                        setFocusIndex(Math.min(j, q.options.length - 2));
+                      }}
                       aria-label={`Remove answer ${letter}`}
                     >
                       Remove
@@ -109,7 +124,14 @@ function OptionsEditor({
       </ol>
       {canAddOption(q) && (
         <div>
-          <Button size="compact" variant="secondary" onClick={() => onChange(addOption(q))}>
+          <Button
+            size="compact"
+            variant="secondary"
+            onClick={() => {
+              onChange(addOption(q));
+              setFocusIndex(q.options.length);
+            }}
+          >
             Add answer
           </Button>
         </div>
@@ -253,6 +275,7 @@ export function QuestionCard(p: QuestionCardProps) {
       id={fieldId(['questions', index])}
       tabIndex={-1}
       data-question={index}
+      data-question-id={q.id}
       data-open={p.open}
       data-invalid={p.problems > 0}
     >
@@ -262,6 +285,7 @@ export function QuestionCard(p: QuestionCardProps) {
           className={styles.summaryButton}
           aria-expanded={p.open}
           aria-controls={bodyId}
+          data-focus="summary"
           onClick={p.onToggle}
         >
           <span className={styles.number}>{index + 1}</span>
@@ -293,11 +317,16 @@ export function QuestionCard(p: QuestionCardProps) {
           </span>
         </button>
         <div className={styles.cardActions}>
+          {/*
+            aria-disabled, not disabled, at either end: a card that has just been moved to the top
+            still has focus on Move up, and a disabled button cannot keep it.
+          */}
           <Button
             size="compact"
             variant="secondary"
-            onClick={() => p.onMove(-1)}
-            disabled={index === 0}
+            onClick={() => index > 0 && p.onMove(-1)}
+            aria-disabled={index === 0 || undefined}
+            data-focus="move-up"
             aria-label={`Move up, question ${index + 1}`}
           >
             Move up
@@ -305,8 +334,9 @@ export function QuestionCard(p: QuestionCardProps) {
           <Button
             size="compact"
             variant="secondary"
-            onClick={() => p.onMove(1)}
-            disabled={index === p.count - 1}
+            onClick={() => index < p.count - 1 && p.onMove(1)}
+            aria-disabled={index === p.count - 1 || undefined}
+            data-focus="move-down"
             aria-label={`Move down, question ${index + 1}`}
           >
             Move down
@@ -350,15 +380,25 @@ export function QuestionCard(p: QuestionCardProps) {
           <ImageField
             fieldId={fieldId(['questions', index, 'imageKey'])}
             imageKey={q.imageKey}
+            imageAlt={q.imageAlt}
             urlFor={p.urlFor}
             uploading={p.uploading}
             error={p.uploadError ?? p.errorOf(fieldId(['questions', index, 'imageKey'])) ?? null}
             onFile={p.onFile}
-            onRemove={() => {
-              const { imageKey: _removed, ...rest } = q;
-              p.onChange(rest as Question);
-            }}
+            onRemove={() => p.onChange(removeQuestionImage(q))}
           />
+          {q.imageKey && (
+            <TextField
+              fieldId={fieldId(['questions', index, 'imageAlt'])}
+              label="Image description"
+              hint="Say what the picture shows if the question depends on it, without giving the answer away. Leave it empty if the picture is only decoration."
+              value={q.imageAlt ?? ''}
+              counter={`${(q.imageAlt ?? '').length} / ${LIMITS.imageAltMax}`}
+              error={p.errorOf(fieldId(['questions', index, 'imageAlt']))}
+              autoComplete="off"
+              onChange={(e) => p.onChange(setImageAlt(q, e.target.value))}
+            />
+          )}
           <TypeFields q={q} index={index} errorOf={p.errorOf} onChange={p.onChange} />
           <div className={styles.pair}>
             <SelectField

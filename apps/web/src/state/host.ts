@@ -26,8 +26,12 @@ export interface HostNotice {
   seq: number;
 }
 
-/** After one of these nothing the socket says can change the screen. */
-export type HostEnd = 'session-ended' | 'not-found' | 'unauthorized' | 'out-of-date';
+/**
+ * After one of these nothing the socket says can change the screen. `unauthorized` may be
+ * mended by a fresh sign-in token; `forbidden` (the session is another account's) never is:
+ * the same `host.hello` would be refused again, so the page stops for good.
+ */
+export type HostEnd = 'session-ended' | 'not-found' | 'unauthorized' | 'forbidden' | 'out-of-date';
 
 export interface LiveState {
   questionIndex: number;
@@ -238,7 +242,6 @@ function reduceError(state: HostState, msg: Extract<ServerMessage, { type: 'erro
   switch (msg.code) {
     case 'unauthorized':
     case 'forbidden':
-      return { ...state, ended: 'unauthorized' };
     case 'session-ended':
     case 'not-found':
       return { ...state, ended: msg.code };

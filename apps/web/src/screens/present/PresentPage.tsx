@@ -200,6 +200,7 @@ function PresentSession({ sessionId, auth }: { sessionId: string; auth: HostAuth
       helpOpen={help}
       onHelpClose={() => setHelp(false)}
       onReload={() => window.location.reload()}
+      onSignOut={() => auth.signOut()}
       bar={{
         ...barStateFor(snap),
         textScale: scale,

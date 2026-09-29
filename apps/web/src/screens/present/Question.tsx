@@ -108,7 +108,7 @@ export function QuestionView({
 
       {imageUrl && (
         <div className={s.image}>
-          <img src={imageUrl} alt="Picture for this question" />
+          <img src={imageUrl} alt={q.imageAlt ?? ''} />
         </div>
       )}
 

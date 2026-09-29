@@ -22,7 +22,9 @@ import {
   newId,
   newQuestion,
   removeOption,
+  removeQuestionImage,
   replaceQuestion,
+  setImageAlt,
   setQuestionImage,
   timeLimitLabel,
   validateDraft,
@@ -368,6 +370,94 @@ describe('attaching an uploaded picture', () => {
     const q = next.questions[0];
     expect(q?.type === 'single' && q.options.length).toBe(4);
     expect(Question.safeParse(q).success).toBe(true);
+  });
+});
+
+describe('the picture and its description', () => {
+  const KEY = 'media/host-abc/abcdef123456.png';
+  const withPicture = (kinds: readonly (typeof types)[number][] = ['single']) => {
+    const d = filled(kinds);
+    return setQuestionImage(d, d.questions[0]?.id as string, KEY);
+  };
+
+  it('a description is set and cleared as a question field; empty means none', () => {
+    const q = withPicture().questions[0] as Question;
+    const described = setImageAlt(q, 'A grey, cratered planet');
+    expect(described.imageAlt).toBe('A grey, cratered planet');
+    expect(q.imageAlt).toBeUndefined();
+    const cleared = setImageAlt(described, '');
+    expect('imageAlt' in cleared).toBe(false);
+    expect(cleared.imageKey).toBe(KEY);
+  });
+
+  it('removing the picture removes its description, so the draft stays valid', () => {
+    const d = withPicture(['poll']);
+    const described = replaceQuestion(d, 0, setImageAlt(d.questions[0] as Question, 'Two forks'));
+    expect(validateDraft(described).ok).toBe(true);
+    const removed = removeQuestionImage(described.questions[0] as Question);
+    expect('imageKey' in removed).toBe(false);
+    expect('imageAlt' in removed).toBe(false);
+    expect(validateDraft(replaceQuestion(described, 0, removed)).ok).toBe(true);
+  });
+
+  it('changing the type keeps the description with the picture', () => {
+    const q = setImageAlt(withPicture().questions[0] as Question, 'A rocky planet');
+    const poll = changeQuestionType(q, 'poll', counter());
+    expect(poll).toMatchObject({ type: 'poll', imageKey: KEY, imageAlt: 'A rocky planet' });
+    expect(Question.safeParse(poll).success).toBe(true);
+  });
+
+  it('a replacement picture keeps the description the host wrote', () => {
+    const d = withPicture();
+    const described = replaceQuestion(d, 0, setImageAlt(d.questions[0] as Question, 'Rings'));
+    const next = setQuestionImage(
+      described,
+      described.questions[0]?.id as string,
+      'media/host-abc/other1234567.png',
+    );
+    expect(next.questions[0]).toMatchObject({
+      imageKey: 'media/host-abc/other1234567.png',
+      imageAlt: 'Rings',
+    });
+  });
+
+  it('saves the trimmed description, and drops one that was only spaces', () => {
+    const d = withPicture(['single', 'poll']);
+    const q0 = setImageAlt(d.questions[0] as Question, '  Rings, edge-on  ');
+    const q1 = setQuestionImage(d, d.questions[1]?.id as string, KEY).questions[1] as Question;
+    const both = replaceQuestion(replaceQuestion(d, 0, q0), 1, setImageAlt(q1, '   '));
+    const r = validateDraft(both);
+    if (!r.ok) throw new Error(JSON.stringify(r.issues));
+    expect(r.input.questions[0]?.imageAlt).toBe('Rings, edge-on');
+    expect('imageAlt' in (r.input.questions[1] as object)).toBe(false);
+    expect(QuizInput.safeParse(r.input).success).toBe(true);
+  });
+
+  it('says what is wrong with a description that is too long or has no picture', () => {
+    const d = withPicture();
+    const tooLong = replaceQuestion(
+      d,
+      0,
+      setImageAlt(d.questions[0] as Question, 'x'.repeat(LIMITS.imageAltMax + 1)),
+    );
+    const long = validateDraft(tooLong);
+    if (long.ok) throw new Error();
+    expect(long.issues).toContainEqual({
+      path: ['questions', 0, 'imageAlt'],
+      fieldId: 'f-questions-0-imageAlt',
+      message: `Question 1: the image description can be at most ${LIMITS.imageAltMax} characters.`,
+      question: 0,
+    });
+
+    const orphan = replaceQuestion(filled(['poll']), 0, {
+      ...(filled(['poll']).questions[0] as Question),
+      imageAlt: 'A picture that is not there',
+    });
+    const r = validateDraft(orphan);
+    if (r.ok) throw new Error();
+    expect(r.issues.map((i) => i.message)).toContain(
+      'Question 1: the image description needs an image. Add one, or clear the description.',
+    );
   });
 });
 

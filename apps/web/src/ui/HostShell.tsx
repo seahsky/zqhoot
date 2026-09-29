@@ -8,8 +8,6 @@ export interface HostShellProps {
   displayName?: string | null;
   /** Omit on the sign-in page. */
   onSignOut?: () => void;
-  /** Called before a header link navigates; return false to stay (unsaved changes). */
-  onLeave?: (to: string) => boolean;
   children: ReactNode;
 }
 
@@ -19,22 +17,19 @@ export interface HostShellProps {
  * rem-based and the column reflows down to 320 px; on wide screens it is capped so lines stay
  * readable.
  */
-export function HostShell({ displayName, onSignOut, onLeave, children }: HostShellProps) {
-  const go = (to: string) => (e: { preventDefault: () => void }) => {
-    if (onLeave && !onLeave(to)) e.preventDefault();
-  };
+export function HostShell({ displayName, onSignOut, children }: HostShellProps) {
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <Link to="/" className={styles.brand} onClick={go('/')}>
+        <Link to="/" className={styles.brand}>
           zqhoot
         </Link>
         {onSignOut && (
           <nav aria-label="Host" className={styles.nav}>
-            <Link to="/host" className={styles.navLink} onClick={go('/host')}>
+            <Link to="/host" className={styles.navLink}>
               Quizzes
             </Link>
-            <Link to="/edit?q=new" className={styles.navLink} onClick={go('/edit?q=new')}>
+            <Link to="/edit?q=new" className={styles.navLink}>
               New quiz
             </Link>
           </nav>

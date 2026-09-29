@@ -205,11 +205,15 @@ describe('presenter fixtures', () => {
   });
 
   it('every host snapshot they hold parses, so the wire shape is what a server would send', () => {
+    // A refused connection (the forbidden screens) never received one.
     for (const [id, fx] of Object.entries(PRESENT_FIXTURES)) {
-      expect(HostSnapshot.safeParse(fx.state.snapshot).success, id).toBe(true);
+      if (fx.state.ended === null) {
+        expect(HostSnapshot.safeParse(fx.state.snapshot).success, id).toBe(true);
+      }
     }
     for (const [id, state] of Object.entries(HOST_LIVE_FIXTURES)) {
-      expect(HostSnapshot.safeParse(state.snapshot).success, id).toBe(true);
+      if (state.ended === null)
+        expect(HostSnapshot.safeParse(state.snapshot).success, id).toBe(true);
     }
   });
 
@@ -231,6 +235,7 @@ describe('presenter fixtures', () => {
       'present-podium': 'podium',
       'present-ended-unscored': 'thanks',
       'present-help': 'lobby',
+      'present-forbidden': 'over',
     };
     for (const [id, screen] of Object.entries(expected)) {
       const fx = PRESENT_FIXTURES[id as keyof typeof PRESENT_FIXTURES];

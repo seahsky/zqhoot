@@ -251,6 +251,74 @@ test.describe('join and play against a scripted server', () => {
     expect(server.clientMessages('answer')).toHaveLength(0);
   });
 
+  test('an unscored reveal says the question closed and shows what the player sent, until a resume', async ({
+    page,
+  }) => {
+    const server = new ScriptedServer();
+    await server.attach(page);
+    const now = Date.now();
+    const LUNCH = {
+      id: 'question-lunch',
+      type: 'poll',
+      prompt: 'Where should we eat lunch?',
+      timeLimitSec: 60,
+      options: [
+        { id: 'option-cafe', text: 'The cafe' },
+        { id: 'option-pizza', text: 'Pizza' },
+      ],
+    } as const;
+    const pollResult = {
+      type: 'poll',
+      answered: 3,
+      totalPlayers: 5,
+      counts: { 'option-cafe': 1, 'option-pizza': 2 },
+    };
+    const outcome = { answered: true, points: 0, streakBonus: 0, score: 0, rank: 2, streak: 0 };
+    let phase: Record<string, unknown> = snapshot({
+      sv: 2,
+      phase: 'question',
+      questionIndex: 0,
+      question: { question: LUNCH, openAt: now - 1_000, deadline: now + 60_000 },
+    });
+    playerServer(server, () => phase);
+    const answers = server.onClient;
+    server.onClient = (msg, ws) => {
+      answers(msg, ws);
+      if (msg.type === 'answer')
+        server.send(ws, { type: 'answer.ack', index: 0, status: 'accepted', entries: 1 });
+    };
+    await withCredentials(page);
+    await page.goto('/play?s=session-demo-01');
+
+    await page.getByRole('button', { name: /Pizza/ }).click();
+    await expect(page.getByRole('heading', { name: 'Answer locked in' })).toBeVisible();
+    server.send(server.last, {
+      type: 'reveal',
+      sv: 3,
+      index: 0,
+      result: pollResult,
+      you: outcome,
+    });
+
+    // Its own headline, not the words of the screen the player has just left.
+    await expect(page.getByRole('heading', { name: 'Question closed' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Answer locked in' })).toHaveCount(0);
+    await expect(page.getByText('No points were given for this question.')).toBeVisible();
+    await expect(page.getByTestId('own-answer')).toHaveText('Your answer: B · Pizza');
+
+    // After a resume the snapshot does not say what was sent, so the line is simply not there.
+    phase = snapshot({
+      sv: 3,
+      phase: 'reveal',
+      questionIndex: 0,
+      reveal: { result: pollResult, you: outcome, question: LUNCH },
+    });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Question closed' })).toBeVisible();
+    await expect(page.getByText('No points were given for this question.')).toBeVisible();
+    await expect(page.getByTestId('own-answer')).toHaveCount(0);
+  });
+
   test('a dropped connection shows Reconnecting… without losing the screen, then resumes', async ({
     page,
   }) => {

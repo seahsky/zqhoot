@@ -1,8 +1,9 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { IMAGE_CONTENT_TYPES } from '@zqhoot/protocol';
 import buttonStyles from '../../ui/Button.module.css';
 import { Button } from '../../ui/Button.tsx';
 import { cx } from '../../ui/cx.ts';
+import { rescueFocus } from '../../ui/focus.ts';
 import fieldStyles from '../../ui/TextField.module.css';
 import styles from './Editor.module.css';
 
@@ -10,6 +11,8 @@ export interface ImageFieldProps {
   fieldId: string;
   /** The stored key, or undefined when the question has no picture. */
   imageKey: string | undefined;
+  /** What the picture shows; without it the preview is decoration, as on the big screen. */
+  imageAlt: string | undefined;
   /** Resolves a key to the URL to preview (`mediaBaseUrl + key`). */
   urlFor: (key: string) => string;
   /** An upload for this question is in flight. */
@@ -33,6 +36,7 @@ const ACCEPT = IMAGE_CONTENT_TYPES.join(',');
 export function ImageField({
   fieldId,
   imageKey,
+  imageAlt,
   urlFor,
   uploading,
   error,
@@ -42,6 +46,13 @@ export function ImageField({
   const uid = useId();
   const input = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
+  // The input is disabled while a file uploads, which takes focus with it; it comes back after.
+  const chose = useRef(false);
+  useEffect(() => {
+    if (uploading || !chose.current) return;
+    chose.current = false;
+    rescueFocus(input.current);
+  }, [uploading]);
   const hintId = `${uid}-hint`;
   const errorId = `${uid}-error`;
   return (
@@ -54,7 +65,7 @@ export function ImageField({
       </p>
       {imageKey && (
         <div className={styles.picture}>
-          <img src={urlFor(imageKey)} alt="Preview of this question's image" />
+          <img src={urlFor(imageKey)} alt={imageAlt ?? ''} />
         </div>
       )}
       <div className={styles.imageActions}>
@@ -72,6 +83,7 @@ export function ImageField({
             if (input.current) input.current.value = '';
             if (file) {
               setFileName(file.name);
+              chose.current = true;
               onFile(file);
             }
           }}
@@ -93,7 +105,11 @@ export function ImageField({
             size="compact"
             variant="secondary"
             className={styles.tall}
-            onClick={onRemove}
+            onClick={() => {
+              // This button goes with the picture; the file input, which stays, is next in line.
+              input.current?.focus();
+              onRemove();
+            }}
             disabled={uploading}
           >
             Remove image

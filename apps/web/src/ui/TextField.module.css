@@ -39,8 +39,14 @@
   line-height: 1.3;
 }
 
+/*
+ * A refused entry takes one heavier border, with the padding giving back what it takes so the
+ * text does not move. An inset shadow beside the border leaves a seam at the rounded corners,
+ * which shows as a double line under prefers-contrast: more.
+ */
 .control[aria-invalid='true'] {
-  box-shadow: inset 0 0 0 3px var(--ink);
+  border-width: calc(var(--outline-w) + 3px);
+  padding: calc(0.75rem - 3px) calc(1rem - 3px);
 }
 
 .control::placeholder {
@@ -170,10 +176,4 @@
   font-size: var(--fs-small);
   font-weight: 700;
   color: var(--ink-2);
-}
-
-@media (forced-colors: active) {
-  .control[aria-invalid='true'] {
-    border-width: 6px;
-  }
 }

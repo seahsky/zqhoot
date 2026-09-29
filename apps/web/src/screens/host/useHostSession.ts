@@ -5,6 +5,7 @@ import type { HostSnapshot } from '@zqhoot/protocol';
 import type { HostAuth } from '../../auth/session.ts';
 import { getRuntimeConfig } from '../../config/runtime.ts';
 import { Connection } from '../../net/connection.ts';
+import { AuthRetry } from '../../state/authRetry.ts';
 import { hostReducer, initialHostState } from '../../state/host.ts';
 import type { HostAction, HostState } from '../../state/host.ts';
 import { IDLE_DRIVER, driverQuestionOf, driverStep } from '../../state/driver.ts';
@@ -54,6 +55,10 @@ export function useHostSession(o: {
   const driver = useRef<DriverState>(IDLE_DRIVER);
   // Bumped after a refreshed sign-in, to open a new connection with the new token.
   const [epoch, setEpoch] = useState(0);
+  const retry = useRef<AuthRetry | null>(null);
+  // The retry policy outlives renders and needs to know whether the screen is in its refused state.
+  const endedRef = useRef(state.ended);
+  endedRef.current = state.ended;
   // The connection outlives renders, so its planned-reconnect check reads the phase through a ref.
   const phaseRef = useRef<HostSnapshot['phase'] | null>(null);
 
@@ -65,6 +70,26 @@ export function useHostSession(o: {
     return sent;
   }, []);
 
+  // A refused or missing token is mended by a refresh and a new connection, but only a few
+  // times in a row and never faster than the reconnect backoff (see `AuthRetry`).
+  useEffect(() => {
+    const policy = new AuthRetry({
+      refresh: () => auth.handleUnauthorized(),
+      onRefreshed: () => {
+        if (endedRef.current === 'unauthorized') {
+          dispatch({ type: 'reset', connection: 'connecting' });
+        }
+        setEpoch((n) => n + 1);
+      },
+      onGiveUp: () => auth.expire(),
+    });
+    retry.current = policy;
+    return () => {
+      policy.dispose();
+      retry.current = null;
+    };
+  }, [auth]);
+
   useEffect(() => {
     const c = new Connection({
       url: getRuntimeConfig().wsUrl,
@@ -72,7 +97,7 @@ export function useHostSession(o: {
         const authToken = auth.getToken();
         if (!authToken) {
           // Expired while the page was asleep: refresh, then come back with a new connection.
-          void auth.handleUnauthorized().then((ok) => ok && setEpoch((n) => n + 1));
+          retry.current?.refused();
           return null;
         }
         const hello = ClientMessage.safeParse({
@@ -84,7 +109,10 @@ export function useHostSession(o: {
         });
         return hello.success ? hello.data : null;
       },
-      onMessage: (msg) => dispatch({ type: 'message', msg }),
+      onMessage: (msg) => {
+        if (msg.type === 'welcome') retry.current?.accepted();
+        dispatch({ type: 'message', msg });
+      },
       onStatus: (status) => dispatch({ type: 'connection', status }),
       // ADR-0008: the proactive reconnect belongs between questions, not while one is open.
       canReconnectNow: () => hostMayReconnect(phaseRef.current),
@@ -98,17 +126,14 @@ export function useHostSession(o: {
     };
   }, [sessionId, client, auth, epoch]);
 
-  // A final error ends the conversation; only an expired sign-in can be mended.
+  // A final error ends the conversation; only a refused sign-in token can be mended. `forbidden`
+  // (another account's session) is not: the same hello would be refused again, so nothing is
+  // refreshed and nothing reconnects.
   useEffect(() => {
     if (state.ended === null) return;
     conn.current?.stop();
-    if (state.ended !== 'unauthorized') return;
-    void auth.handleUnauthorized().then((ok) => {
-      if (!ok) return;
-      dispatch({ type: 'reset', connection: 'connecting' });
-      setEpoch((n) => n + 1);
-    });
-  }, [state.ended, auth]);
+    if (state.ended === 'unauthorized') retry.current?.refused();
+  }, [state.ended]);
 
   // --- polling and auto-close -------------------------------------------------------------
 

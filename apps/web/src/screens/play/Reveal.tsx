@@ -1,4 +1,4 @@
-import { ordinal, pointsLabel, revealHeadline } from '../../state/format.ts';
+import { ordinal, ownAnswerLine, pointsLabel, revealHeadline } from '../../state/format.ts';
 import type { PlayerView } from '../../state/player.ts';
 import { AnswerOption } from '../../ui/AnswerOption.tsx';
 import { ResultIcon } from '../../ui/ResultIcon.tsx';
@@ -35,6 +35,13 @@ export function Reveal({ view }: { view: RevealView }) {
           </p>
         )}
         {outcome.streak >= 2 && <p className={styles.lead}>{outcome.streak} in a row</p>}
+
+        {/* Nothing here was marked, so what the player sent is the one thing left to say. */}
+        {variant === 'unscored' && view.yourAnswer && (
+          <p className={styles.lead} data-testid="own-answer">
+            {ownAnswerLine(view.yourAnswer)}
+          </p>
+        )}
 
         {variant !== 'correct' && correctAnswer && (
           <div className={styles.stack}>
