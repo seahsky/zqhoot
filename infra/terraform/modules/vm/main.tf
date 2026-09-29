@@ -37,11 +37,15 @@ locals {
     unit_file        = file("${path.module}/files/zqhoot.service")
   })
 
+  # UDP 443 carries HTTP/3: Compose publishes it and Caddy advertises it with Alt-Svc, so a
+  # closed port would make browsers try QUIC, time out and fall back to TCP.
   web_ingress = {
-    http_ipv4  = { port = 80, cidr_ipv4 = "0.0.0.0/0", cidr_ipv6 = null }
-    http_ipv6  = { port = 80, cidr_ipv4 = null, cidr_ipv6 = "::/0" }
-    https_ipv4 = { port = 443, cidr_ipv4 = "0.0.0.0/0", cidr_ipv6 = null }
-    https_ipv6 = { port = 443, cidr_ipv4 = null, cidr_ipv6 = "::/0" }
+    http_ipv4  = { protocol = "tcp", port = 80, cidr_ipv4 = "0.0.0.0/0", cidr_ipv6 = null }
+    http_ipv6  = { protocol = "tcp", port = 80, cidr_ipv4 = null, cidr_ipv6 = "::/0" }
+    https_ipv4 = { protocol = "tcp", port = 443, cidr_ipv4 = "0.0.0.0/0", cidr_ipv6 = null }
+    https_ipv6 = { protocol = "tcp", port = 443, cidr_ipv4 = null, cidr_ipv6 = "::/0" }
+    h3_ipv4    = { protocol = "udp", port = 443, cidr_ipv4 = "0.0.0.0/0", cidr_ipv6 = null }
+    h3_ipv6    = { protocol = "udp", port = 443, cidr_ipv4 = null, cidr_ipv6 = "::/0" }
   }
 }
 
@@ -118,7 +122,7 @@ resource "aws_vpc_security_group_ingress_rule" "web" {
 
   security_group_id = aws_security_group.this.id
   description       = "Public web traffic (Caddy)"
-  ip_protocol       = "tcp"
+  ip_protocol       = each.value.protocol
   from_port         = each.value.port
   to_port           = each.value.port
   cidr_ipv4         = each.value.cidr_ipv4

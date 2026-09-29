@@ -18,7 +18,9 @@ retry() {
   return 1
 }
 retry apt-get update
-retry apt-get install -y --no-install-recommends ca-certificates curl git jq unzip docker.io docker-compose-v2
+# buildx is only a suggestion of docker.io, so --no-install-recommends leaves it out. Compose 2.40
+# still builds without it, but newer Compose releases refuse to, and the Dockerfile needs BuildKit.
+retry apt-get install -y --no-install-recommends ca-certificates curl git jq unzip docker.io docker-compose-v2 docker-buildx
 systemctl enable --now docker
 
 # AWS CLI v2 is not in the Ubuntu 24.04 archive.

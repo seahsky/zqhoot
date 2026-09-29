@@ -34,7 +34,13 @@ pnpm --filter @zqhoot/web build
 pnpm --filter @zqhoot/server-node dev
 ```
 
-Open http://localhost:8080/host and sign in as `admin` with the password `dev-password` (throwaway values from `apps/server-node/dev.env`). Create a quiz and start a session. Then open `/join` on a phone or in a second browser window.
+Open http://localhost:8080/host and sign in as `admin` with the password `dev-password` (throwaway values from `apps/server-node/dev.env`). Create a quiz and start a session. Then open `/join` in a second browser window.
+
+To join from a phone on the same network, start the server with your machine's LAN address instead (shell variables override `dev.env`):
+
+```sh
+ZQ_HOST=0.0.0.0 ZQ_PUBLIC_URL=http://192.168.1.20:8080 pnpm --filter @zqhoot/server-node dev
+```
 
 For hot reload of the web app, run `pnpm --filter @zqhoot/web dev` as well: Vite on port 5173 proxies to the server. Start the server with `ZQ_PUBLIC_URL=http://localhost:5173` in that case; see [apps/server-node/README.md](apps/server-node/README.md).
 
@@ -49,11 +55,16 @@ scripts/deploy-aws.sh      # preflight check, build, terraform apply, upload the
 Then create a host account (self-sign-up is off by default):
 
 ```sh
+tf_out() { terraform -chdir=infra/terraform/envs/aws-serverless output -raw "$1"; }
 aws cognito-idp admin-create-user \
-  --user-pool-id "$(terraform -chdir=infra/terraform/envs/aws-serverless output -raw cognito_user_pool_id)" \
+  --region "$(tf_out region)" \
+  --user-pool-id "$(tf_out cognito_user_pool_id)" \
   --username host@example.com \
-  --user-attributes Name=email,Value=host@example.com Name=email_verified,Value=true
+  --user-attributes Name=email,Value=host@example.com Name=email_verified,Value=true \
+  --desired-delivery-mediums EMAIL
 ```
+
+Cognito emails a temporary password, which the host replaces at first sign-in.
 
 The deploy script first runs `scripts/aws-preflight.sh`, which matters on a **new AWS account**. New accounts can start with a Lambda concurrency limit as low as 10, which throttles a 400-answer burst. The script prints the exact quota-increase request. Details, variables, custom domains and optional remote state are in [infra/terraform/README.md](infra/terraform/README.md).
 

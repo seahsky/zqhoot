@@ -208,7 +208,7 @@ scripts/vm-put-secrets.sh --name zqhoot --region us-east-1 --env-file deploy/vm/
 
 What happens on the instance:
 
-- `user_data` (no secrets in it) installs `docker.io`, `docker-compose-v2`, `git`, `jq` and the AWS
+- `user_data` (no secrets in it) installs `docker.io`, `docker-compose-v2`, `docker-buildx`, `git`, `jq` and the AWS
   CLI v2, clones `repo_url` at `repo_ref` into `/opt/zqhoot`, and installs `zqhoot.service`.
 - `zqhoot.service` runs at every boot. Before starting the stack it runs `zqhoot-fetch-env`,
   which waits for the `/zqhoot/{name}/_READY` marker in SSM Parameter Store, reads every parameter
@@ -321,7 +321,7 @@ network route to `registry.terraform.io`):
 - The `user_data` template renders to valid bash (`bash -n`), and `systemd-analyze verify` (systemd
   255.4, the version in Ubuntu 24.04) accepts the unit apart from the binary that only exists on
   the instance.
-- The Ubuntu packages `docker.io`, `docker-compose-v2` (both in `universe`), `git`, `jq`, `unzip`,
+- The Ubuntu packages `docker.io`, `docker-compose-v2`, `docker-buildx` (all in `universe`), `git`, `jq`, `unzip`,
   `curl` and `ca-certificates` exist for arm64 in the `noble` and `noble-updates` indexes on
   ports.ubuntu.com, and resolve in `apt-cache policy` on an Ubuntu 24.04 host. `awscli` does
   **not** exist in noble, which is why `user_data` installs AWS CLI v2 from

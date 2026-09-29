@@ -9,6 +9,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8080',
       '/config.json': 'http://localhost:8080',
+      '/media': 'http://localhost:8080',
       '/ws': { target: 'ws://localhost:8080', ws: true },
     },
   },

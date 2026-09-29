@@ -22,7 +22,7 @@ pnpm --filter @zqhoot/server-node dev      # http://localhost:8080, admin / dev-
 
 `dev` runs `tsx watch` with [`dev.env`](dev.env), which holds throwaway values (a plaintext admin password, a fixed JWT secret, debug logging, `./data` for state). Variables you export in your shell win over the file. Do not reuse those values anywhere reachable by other people.
 
-With `vite dev` in front (`pnpm --filter @zqhoot/web dev`, port 5173, proxying `/api`, `/config.json` and `/ws` to 8080) the browser's origin is `http://localhost:5173`, so start the server with `ZQ_PUBLIC_URL=http://localhost:5173`. Otherwise the WebSocket `Origin` check answers 403 and `config.json` names the wrong `wsUrl`.
+With `vite dev` in front (`pnpm --filter @zqhoot/web dev`, port 5173, proxying `/api`, `/config.json`, `/media` and `/ws` to 8080) the browser's origin is `http://localhost:5173`, so start the server with `ZQ_PUBLIC_URL=http://localhost:5173`. Otherwise the WebSocket `Origin` check answers 403 and `config.json` names the wrong `wsUrl`.
 
 ## Commands
 

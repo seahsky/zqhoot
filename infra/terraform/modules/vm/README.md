@@ -11,7 +11,7 @@ One EC2 instance that runs the single-process Docker Compose stack
   `ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-*`, most recent). Encrypted gp3 root
   volume (20 GB by default, AWS-managed EBS key), IMDSv2 required with a hop limit of 1 so
   containers cannot reach the instance role.
-- **Security group**: 80 and 443 from `0.0.0.0/0` and `::/0`; 22 only if `ssh_cidr` is set; all
+- **Security group**: TCP 80 and 443 and UDP 443 (HTTP/3) from `0.0.0.0/0` and `::/0`; 22 only if `ssh_cidr` is set; all
   outbound. **Elastic IP** attached.
 - **Instance profile**: `AmazonSSMManagedInstanceCore` (Session Manager), `ssm:GetParameter`,
   `GetParameters` and `GetParametersByPath` on `parameter/zqhoot/{name}` and `parameter/zqhoot/{name}/*`,
@@ -19,7 +19,7 @@ One EC2 instance that runs the single-process Docker Compose stack
   `ssm.{region}.amazonaws.com` (the AWS-managed `alias/aws/ssm` key that SecureStrings use; no
   customer-managed key exists).
 - **`user_data`** ([user_data.sh.tftpl](user_data.sh.tftpl)): installs `docker.io`,
-  `docker-compose-v2`, `git`, `jq`, `unzip`, `curl`, `ca-certificates` from the Ubuntu archive and AWS
+  `docker-compose-v2`, `docker-buildx`, `git`, `jq`, `unzip`, `curl`, `ca-certificates` from the Ubuntu archive and AWS
   CLI v2 from `awscli.amazonaws.com` (`awscli` is not in the noble archive); clones `var.repo_url`
   at `var.repo_ref` into `/opt/zqhoot`; writes `/etc/zqhoot/vm.conf`
   (region, SSM path, domain: nothing secret), [`zqhoot-fetch-env`](files/fetch-env.sh) and

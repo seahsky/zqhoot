@@ -85,17 +85,20 @@ run "network_exposure" {
 
   assert {
     condition = (
-      length(aws_vpc_security_group_ingress_rule.web) == 4 &&
-      alltrue([for r in aws_vpc_security_group_ingress_rule.web : r.ip_protocol == "tcp" && contains([80, 443], r.from_port) && r.from_port == r.to_port]) &&
+      length(aws_vpc_security_group_ingress_rule.web) == 6 &&
+      alltrue([for r in aws_vpc_security_group_ingress_rule.web : r.from_port == r.to_port && (
+        (r.ip_protocol == "tcp" && contains([80, 443], r.from_port)) ||
+        (r.ip_protocol == "udp" && r.from_port == 443)
+      )]) &&
       length(aws_vpc_security_group_ingress_rule.ssh) == 0
     )
-    error_message = "only 80 and 443 are open by default; SSH stays closed"
+    error_message = "only TCP 80 and 443 and UDP 443 (HTTP/3) are open by default; SSH stays closed"
   }
 
   assert {
     condition = (
-      length([for r in aws_vpc_security_group_ingress_rule.web : r if r.cidr_ipv4 == "0.0.0.0/0"]) == 2 &&
-      length([for r in aws_vpc_security_group_ingress_rule.web : r if r.cidr_ipv6 == "::/0"]) == 2
+      length([for r in aws_vpc_security_group_ingress_rule.web : r if r.cidr_ipv4 == "0.0.0.0/0"]) == 3 &&
+      length([for r in aws_vpc_security_group_ingress_rule.web : r if r.cidr_ipv6 == "::/0"]) == 3
     )
     error_message = "web ports are open to 0.0.0.0/0 and ::/0"
   }

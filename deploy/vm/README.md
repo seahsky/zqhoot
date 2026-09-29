@@ -24,7 +24,7 @@ Only Caddy publishes ports (80, 443 and 443/udp for HTTP/3). The app is reachabl
 ## What you need
 
 - A Linux host with Docker Engine and the Compose v2 plugin (`docker compose version`). On Ubuntu
-  24.04: `sudo apt-get install docker.io docker-compose-v2`.
+  24.04: `sudo apt-get install docker.io docker-compose-v2 docker-buildx`.
 - Ports 80 and 443 free and reachable. Automatic HTTPS needs them open to the internet.
 - For automatic HTTPS: a DNS name whose A (and AAAA) record points at the host. Without one, use the
   `internal` or `files` TLS mode.

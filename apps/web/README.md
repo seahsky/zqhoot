@@ -8,13 +8,13 @@ This package delivers the foundations (router, design system, client libraries),
 
 Run from the repository root with `pnpm --filter @zqhoot/web <script>`.
 
-| Script      | What it does                                                                                                                         |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `dev`       | Vite dev server. The gallery is on. `/api`, `/config.json` and `/ws` proxy to a server on `localhost:8080`; with none, dev defaults. |
-| `typecheck` | `tsc` (no emit) over `src`, `test`, `e2e` and the config files.                                                                      |
-| `test`      | Vitest, node environment. Includes a test that builds the app and greps the output for gallery code.                                 |
-| `build`     | Production build into `dist/`. Contains no gallery or fixture code.                                                                  |
-| `test:e2e`  | Playwright matrix (Chromium only): builds with the gallery into `dist-e2e/`, serves it on port 4173, runs every spec.                |
+| Script      | What it does                                                                                                                                   |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dev`       | Vite dev server. The gallery is on. `/api`, `/config.json`, `/media` and `/ws` proxy to a server on `localhost:8080`; with none, dev defaults. |
+| `typecheck` | `tsc` (no emit) over `src`, `test`, `e2e` and the config files.                                                                                |
+| `test`      | Vitest, node environment. Includes a test that builds the app and greps the output for gallery code.                                           |
+| `build`     | Production build into `dist/`. Contains no gallery or fixture code.                                                                            |
+| `test:e2e`  | Playwright matrix (Chromium only): builds with the gallery into `dist-e2e/`, serves it on port 4173, runs every spec.                          |
 
 `e2e/screenshots/` and `dist-e2e/` are gitignored. Screenshots are written to `e2e/screenshots/{project}/{screen}.png`, one directory per project (and per preference pass).
 
