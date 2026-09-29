@@ -124,7 +124,10 @@ test.describe('sign-in, Cognito', () => {
 
   test('PKCE redirect out, code exchange back, the ID token as bearer, and sign-out through the logout URL', async ({
     page,
+    baseURL,
   }) => {
+    // The app builds its redirect and logout URIs from its own origin, which follows ZQ_E2E_PORT.
+    const hostUrl = new URL('/host', baseURL).href;
     const server = new ScriptedServer();
     await server.attach(page, { auth });
     const api = new HostApi();
@@ -138,7 +141,7 @@ test.describe('sign-in, Cognito', () => {
       const state = authorizeUrl.searchParams.get('state');
       return route.fulfill({
         status: 302,
-        headers: { location: `http://localhost:4173/host?code=CODE123&state=${state}` },
+        headers: { location: `${hostUrl}?code=CODE123&state=${state}` },
       });
     });
     await page.route(`${DOMAIN}/oauth2/token`, (route) => {
@@ -156,7 +159,7 @@ test.describe('sign-in, Cognito', () => {
     });
     await page.route(`${DOMAIN}/logout*`, (route) => {
       logoutUrl = new URL(route.request().url());
-      return route.fulfill({ status: 302, headers: { location: 'http://localhost:4173/host' } });
+      return route.fulfill({ status: 302, headers: { location: hostUrl } });
     });
 
     await page.goto('/host');
@@ -168,7 +171,7 @@ test.describe('sign-in, Cognito', () => {
     expect(Object.fromEntries(authorize?.searchParams ?? [])).toMatchObject({
       response_type: 'code',
       client_id: 'client-abc',
-      redirect_uri: 'http://localhost:4173/host',
+      redirect_uri: hostUrl,
       scope: 'openid email profile',
       code_challenge_method: 'S256',
     });
@@ -178,7 +181,7 @@ test.describe('sign-in, Cognito', () => {
       grant_type: 'authorization_code',
       client_id: 'client-abc',
       code: 'CODE123',
-      redirect_uri: 'http://localhost:4173/host',
+      redirect_uri: hostUrl,
     });
     expect(token?.get('code_verifier')).toMatch(/^[A-Za-z0-9_-]{43}$/);
 
@@ -195,7 +198,7 @@ test.describe('sign-in, Cognito', () => {
     const logout = logoutUrl as URL | null;
     expect(Object.fromEntries(logout?.searchParams ?? [])).toEqual({
       client_id: 'client-abc',
-      logout_uri: 'http://localhost:4173/host',
+      logout_uri: hostUrl,
     });
     expect(await page.evaluate(() => sessionStorage.getItem('zqhoot:host:auth'))).toBeNull();
   });
