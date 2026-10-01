@@ -1,0 +1,26 @@
+# The build installs its own dependencies and produces its own output.
+**/node_modules
+**/dist
+**/dist-*
+
+.git
+.claude
+
+# Never send environment files (secrets) to the daemon, in the build context or anywhere else.
+**/.env*
+**/*.env
+
+# Infrastructure, documentation and deployment files are not part of the image.
+**/.terraform
+infra
+docs
+deploy
+
+# Test and tool output.
+load/results
+**/coverage
+**/test-results
+**/playwright-report
+**/blob-report
+**/*.tsbuildinfo
+**/*.log

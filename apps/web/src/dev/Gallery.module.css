@@ -1,0 +1,27 @@
+.index {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: max(var(--gutter), env(safe-area-inset-top))
+    max(var(--gutter), env(safe-area-inset-right)) max(var(--gutter), env(safe-area-inset-bottom))
+    max(var(--gutter), env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.list a {
+  display: inline-block;
+  min-height: 2rem;
+  font-weight: 700;
+}
+
+.index code {
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}

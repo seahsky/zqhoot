@@ -1,0 +1,21 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.entries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.entry {
+  max-width: 100%;
+  padding: 0.5rem 0.875rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--surface);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}

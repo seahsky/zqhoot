@@ -1,0 +1,20 @@
+[Unit]
+Description=zqhoot (Docker Compose stack)
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/zqhoot
+# ExecStartPre blocks until the operator has published the environment to SSM, which can be long.
+TimeoutStartSec=infinity
+Restart=on-failure
+RestartSec=30
+ExecStartPre=/usr/local/sbin/zqhoot-fetch-env
+ExecStart=/usr/bin/docker compose -f deploy/vm/docker-compose.yml up -d --build
+ExecStop=/usr/bin/docker compose -f deploy/vm/docker-compose.yml down
+
+[Install]
+WantedBy=multi-user.target

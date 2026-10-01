@@ -1,0 +1,179 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.label {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.labelRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.labelRow svg {
+  width: 1.3em;
+  height: 1.3em;
+}
+
+.hint {
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+
+/* 16px minimum keeps iOS Safari from zooming into the field on focus. */
+.control {
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.75rem 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/*
+ * A refused entry takes one heavier border, with the padding giving back what it takes so the
+ * text does not move. An inset shadow beside the border leaves a seam at the rounded corners,
+ * which shows as a double line under prefers-contrast: more.
+ */
+.control[aria-invalid='true'] {
+  border-width: calc(var(--outline-w) + 3px);
+  padding: calc(0.75rem - 3px) calc(1rem - 3px);
+}
+
+.control::placeholder {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.code {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.area {
+  min-height: 8rem;
+  /* Grows with the prompt, so a 200-character question is never cut off. */
+  field-sizing: content;
+  resize: vertical;
+}
+
+/*
+ * An action beside the input (a Remove button). Wide: the button is centred on the input and the
+ * counter sits under the input, so the button never moves down with it. Narrow: the input
+ * keeps the full width and the button moves up to the label's row, still with its own field.
+ */
+.actionBox {
+  container-type: inline-size;
+}
+
+.withAction {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'label label'
+    'control action'
+    'meta .';
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.withAction.withHint {
+  grid-template-areas:
+    'label label'
+    'hint hint'
+    'control action'
+    'meta .';
+}
+
+@container (max-width: 22rem) {
+  .withAction {
+    grid-template-areas:
+      'label action'
+      'control control'
+      'meta meta';
+  }
+
+  .withAction.withHint {
+    grid-template-areas:
+      'label action'
+      'hint hint'
+      'control control'
+      'meta meta';
+  }
+}
+
+.withAction > .label {
+  grid-area: label;
+}
+
+.withAction > .hint {
+  grid-area: hint;
+}
+
+.withAction > .control {
+  grid-area: control;
+}
+
+.withAction > .meta {
+  grid-area: meta;
+}
+
+.action {
+  grid-area: action;
+}
+
+.meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.error svg {
+  flex: none;
+  width: 1.25em;
+  height: 1.25em;
+  margin-top: 0.05em;
+}
+
+.errorIcon {
+  fill: var(--surface);
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+
+.errorMark {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.counter {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}

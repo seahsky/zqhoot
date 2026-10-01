@@ -1,0 +1,35 @@
+.hero {
+  display: flex;
+  flex: 1 1 auto;
+  flex-grow: var(--fill, 1);
+  flex-direction: column;
+  justify-content: center;
+  gap: 1.25rem;
+}
+
+.glyphs {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.wordmark {
+  font-size: clamp(3rem, 2.2rem + 4vw, 4.5rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.lead {
+  max-width: 28rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  padding-bottom: 0.5rem;
+}

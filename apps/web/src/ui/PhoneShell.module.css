@@ -1,0 +1,58 @@
+/*
+ * Phones anchor actions and answers to the bottom, in the thumb zone. On a tablet or a
+ * laptop that would strand them a screen away from the field they belong to, so above the
+ * breakpoint the content is grouped just under the header instead. Screens read these two
+ * properties rather than repeating the media query: `--push` is the margin above bottom
+ * groups, `--fill` says whether a section stretches to the free height.
+ */
+.shell {
+  --push: auto;
+  --fill: 1;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding-top: max(var(--gutter), env(safe-area-inset-top));
+  padding-right: max(var(--gutter), env(safe-area-inset-right));
+  padding-bottom: max(var(--gutter), env(safe-area-inset-bottom));
+  padding-left: max(var(--gutter), env(safe-area-inset-left));
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gutter);
+  width: 100%;
+  max-width: 32rem;
+  min-width: 0;
+}
+
+.header {
+  min-width: 0;
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--gutter);
+  min-width: 0;
+}
+
+@media (min-width: 700px) and ((orientation: landscape) or (min-height: 900px)) {
+  .shell {
+    --push: clamp(1.5rem, 4vh, 3rem);
+    --fill: 0;
+  }
+
+  /* A fixed offset, not centring: the heading then sits at the same place on every state of
+     the screen, however tall the content below it is. */
+  .main {
+    padding-top: clamp(0rem, 4vh, 2.5rem);
+  }
+
+  /* Four 80-character options and the timer fit a 768px-high laptop only in a wider column. */
+  .wide {
+    max-width: 40rem;
+  }
+}

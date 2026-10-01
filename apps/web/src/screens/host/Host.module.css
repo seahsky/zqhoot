@@ -1,0 +1,455 @@
+/* Sign-in, dashboard and live control. rem-based; every block reflows down to 320 px. */
+
+.narrow {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 28rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.lead {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.problem {
+  font-size: 1rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.problemBox,
+.noticeBox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.meta {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The status line above the page is a live region that is empty most of the time. Out of the flow
+ * while empty, it does not add a blank band (and a gap) under the header, so titles sit as far
+ * from the rule here as on the sign-in and editor pages.
+ */
+.statusSlot:empty {
+  position: absolute;
+}
+
+/* A date or PIN that must not split across two lines. */
+.nowrap {
+  white-space: nowrap;
+}
+
+.eyebrow {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.h2 {
+  font-size: 1.5rem;
+}
+
+.h3 {
+  font-size: 1.125rem;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: 0.75rem;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cardHead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* ---- Live control ----------------------------------------------------------------- */
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Status, not controls: text with a leading dot, no outline and no button shape. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.5rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+
+.chip::before,
+.rosterStatus::before {
+  content: '';
+  flex: none;
+  width: 0;
+  height: 0;
+  border: 0.3em solid currentColor;
+  border-radius: 50%;
+}
+
+.join {
+  font-size: 1.125rem;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+/* On its own line; JoinUrl marks where it may break (after a slash or dot), never mid-word. */
+.joinUrl {
+  display: block;
+  font-weight: 700;
+}
+
+.pin {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (min-width: 64rem) {
+  .columns {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+/* Both columns are panels, so Control and Players start on the same line. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+}
+
+@media (min-width: 40rem) {
+  .panel {
+    padding: 1.25rem;
+  }
+}
+
+/* The one button the host presses all game: big, and always the same place. */
+.next {
+  min-height: 5rem;
+  font-size: 1.5rem;
+}
+
+.prompt {
+  font-size: 1.25rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.dist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.bigFigure {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.bars,
+.ratingList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.25rem 0.75rem;
+}
+
+.barLabel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* The glyph is set in em so it keeps its size next to the text at every display size. */
+.barLabel svg {
+  width: 1.3em;
+  height: 1.3em;
+}
+
+.barFigures {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.barTrack {
+  grid-column: 1 / -1;
+  display: block;
+  height: 1.25rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  background: var(--fill-color, var(--ink));
+  border-right: var(--outline-w) solid var(--ink);
+}
+
+/* An empty bar would still draw its outline edge as a stub. */
+.barFillEmpty {
+  display: none;
+}
+
+/* Forced colours drop background colours: keep the fill, as a system colour, so length shows. */
+@media (forced-colors: active) {
+  .barFill {
+    forced-color-adjust: none;
+    background: CanvasText;
+    border-right-color: CanvasText;
+  }
+}
+
+.correctTag {
+  padding: 0 0.5rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: var(--fs-small);
+  font-weight: 800;
+}
+
+.ratingList li {
+  display: grid;
+  grid-template-columns: 2ch minmax(0, 1fr) 3ch;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 700;
+}
+
+.wordList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-weight: 700;
+}
+
+.moderation {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.responses {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.response {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding: 0.75rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.responseText {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.responseBody {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.rosterBox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rosterScroll {
+  container-type: inline-size;
+  max-height: 26rem;
+  overflow: auto;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+}
+
+.rosterList {
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * Name over status, Kick beside them. In a narrow list the name takes the whole row instead, with
+ * status and Kick under it.
+ *
+ * The name never gets less room than it has at 320 px, where the stacked layout gives it the list's
+ * 14.25rem. Beside Kick it gets the list's width less the gap (0.75rem) and Kick (4.75rem), which
+ * is 14.25rem exactly when the list is 19.75rem wide. So the stacked layout applies below that
+ * width and not a pixel above it: a stacked name has at least 14.25rem, and an inline one has at
+ * least 14.25rem, at every screen width. (A breakpoint lower down leaves a band of phones, 375 to
+ * 400 px, where the name is narrower than at 320 and a 16-character nickname breaks mid-word.)
+ */
+.rosterRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name kick'
+    'status kick';
+  align-items: center;
+  column-gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.rosterRow + .rosterRow {
+  border-top: 1px solid var(--ink-2);
+}
+
+@container (width < 19.75rem) {
+  .rosterRow {
+    grid-template-areas:
+      'name name'
+      'status kick';
+    row-gap: 0.25rem;
+  }
+}
+
+/*
+ * Wraps at spaces. Only a word wider than the whole row (a run of wide capitals or emoji) breaks
+ * inside itself, so the host still reads the whole nickname, which is what moderating needs.
+ */
+.rosterName {
+  grid-area: name;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: break-word;
+}
+
+.rosterStatus {
+  grid-area: status;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* Offline is a ring, online a disc: the difference does not rest on colour. */
+.rosterStatus[data-online='false']::before {
+  width: 0.3em;
+  height: 0.3em;
+  border-width: 0.15em;
+}
+
+.rosterKick {
+  grid-area: kick;
+  justify-self: end;
+}

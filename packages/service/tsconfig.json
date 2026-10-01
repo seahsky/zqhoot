@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // src/ is meant to run on any WebSocket/HTTP host, but the WebCrypto, TextEncoder and Fetch
+    // globals it uses are typed by @types/node here; test/boundary.test.ts scans src/ for
+    // Node-only imports and globals.
+    "types": ["node"]
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}

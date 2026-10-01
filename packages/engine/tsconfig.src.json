@@ -1,0 +1,6 @@
+{
+  // src/ alone, with the base config's empty `types`: a Node global (Buffer, process, setTimeout)
+  // in engine code fails to compile here. tsconfig.json adds Node typings for test/ only.
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
+}

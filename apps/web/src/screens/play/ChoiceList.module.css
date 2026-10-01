@@ -1,0 +1,22 @@
+.container {
+  container-type: inline-size;
+}
+
+.list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap);
+}
+
+/* The grid stretches the cell, not the option inside it; this passes the height on. */
+.list > li {
+  display: grid;
+}
+
+@container (min-width: 420px) {
+  .list[data-compact='true'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    /* Every row as tall as the tallest, so a tile that wraps does not stagger the grid. */
+    grid-auto-rows: 1fr;
+  }
+}

@@ -1,0 +1,75 @@
+import type { TextScale } from '../../ui/Stage.tsx';
+import type { BarState } from './controls.ts';
+import s from './ControlBar.module.css';
+
+export interface ControlBarProps extends BarState {
+  textScale: TextScale;
+  dark: boolean;
+  fullscreen: boolean;
+  /** The bar fades out; it stays in the tab order and comes back on focus or hover. */
+  hidden: boolean;
+  onNext: () => void;
+  onClose: () => void;
+  onLock: () => void;
+  onTextSize: () => void;
+  onTheme: () => void;
+  onFullscreen: () => void;
+  onHelp: () => void;
+  onToggleHidden: () => void;
+}
+
+/**
+ * Every keyboard shortcut also has a button here, in a thin bar. "Hide controls" fades the bar
+ * for the room; it is still reachable with Tab, and shows itself while it holds focus.
+ *
+ * A labelled group, not a `toolbar`: that role promises arrow keys that move between its
+ * buttons, and here → is the clicker's "next" (ADR-0016) wherever focus is. Every button is in
+ * the Tab order instead.
+ */
+export function ControlBar(p: ControlBarProps) {
+  return (
+    <div
+      className={s.bar}
+      role="group"
+      aria-label="Presenter controls"
+      data-hidden={p.hidden ? 'true' : undefined}
+    >
+      {p.nextLabel !== null && (
+        <button type="button" className={`${s.button} ${s.primary}`} onClick={p.onNext}>
+          {p.nextLabel}
+        </button>
+      )}
+      {/* During a question the primary action already ends it; a second button would repeat it. */}
+      {p.canClose && p.nextLabel === null && (
+        <button type="button" className={s.button} onClick={p.onClose}>
+          End question
+        </button>
+      )}
+      {p.canLock && (
+        <button type="button" className={s.button} onClick={p.onLock} aria-pressed={p.locked}>
+          {p.locked ? 'Unlock joining' : 'Lock joining'}
+        </button>
+      )}
+      <button type="button" className={s.button} onClick={p.onTextSize}>
+        Text size {Math.round(p.textScale * 100)}%
+      </button>
+      <button type="button" className={s.button} onClick={p.onTheme}>
+        {p.dark ? 'Light screen' : 'Dark screen'}
+      </button>
+      <button
+        type="button"
+        className={s.button}
+        onClick={p.onFullscreen}
+        aria-pressed={p.fullscreen}
+      >
+        {p.fullscreen ? 'Exit full screen' : 'Full screen'}
+      </button>
+      <button type="button" className={s.button} onClick={p.onHelp}>
+        Shortcuts (?)
+      </button>
+      <button type="button" className={s.button} onClick={p.onToggleHidden} aria-pressed={p.hidden}>
+        {p.hidden ? 'Show controls' : 'Hide controls'}
+      </button>
+    </div>
+  );
+}

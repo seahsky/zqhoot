@@ -15,6 +15,14 @@ coverage/
 *.tfvars
 !*.tfvars.example
 .terraform.lock.hcl.bak
+# A lock file generated from one platform's provider mirror breaks `init` on another platform:
+# operators create their own with the first `terraform init` (infra/terraform/README.md).
+.terraform.lock.hcl
+.terraform.tfstate.lock.info
+*.tfplan
+tfplan
+# Per-operator remote state settings; copy backend.tf.example to create it.
+infra/terraform/envs/*/backend.tf
 crash.log
 # Playwright
 test-results/
@@ -24,3 +32,13 @@ blob-report/
 load/results/raw/
 # Local data
 deploy/vm/data/
+
+# Agent worktrees
+.claude/worktrees/
+
+# apps/web e2e artifacts
+apps/web/e2e/screenshots/
+apps/web/dist-e2e/
+
+# apps/web live e2e artifacts
+apps/web/e2e-live/screenshots/

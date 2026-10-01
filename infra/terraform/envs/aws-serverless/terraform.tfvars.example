@@ -1,0 +1,32 @@
+# Copy to terraform.tfvars (which is gitignored) and adjust. Every line is optional: the values
+# below are the defaults, except the ones that are commented out.
+#
+# Nothing secret belongs in here or anywhere else in Terraform. The app has no application secrets
+# on AWS; Cognito emails a temporary password to new hosts.
+
+region = "us-east-1"
+name   = "zqhoot"
+
+# First host account. Cognito emails a temporary password to this address on the first apply.
+# initial_admin_email = "you@example.com"
+
+# Warm this many ws function instances when a lobby opens (ADR-0010), and how long live-session
+# data is kept (also the CSV export window).
+warm_concurrency = 4
+session_ttl_days = 30
+# log_retention_days = 14
+
+# Optional custom domain. Create the certificate in us-east-1 first, and add a CNAME from the
+# domain to the distribution_domain_name output after the apply. No Route 53 zone is created:
+# it would add a fixed monthly fee.
+# custom_domain       = "quiz.example.com"
+# acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000"
+
+# Lambda packages. The defaults are where pnpm --filter @zqhoot/server-lambda build writes them,
+# relative to this directory.
+# lambda_ws_zip   = "../../../../apps/server-lambda/dist/ws.zip"
+# lambda_http_zip = "../../../../apps/server-lambda/dist/http.zip"
+
+# Guard rails for a long-lived deployment.
+# deletion_protection    = true
+# point_in_time_recovery = true

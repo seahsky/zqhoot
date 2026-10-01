@@ -1,0 +1,67 @@
+.scale {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.caption {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+/*
+ * Balanced rows (--cols, from ratingLayout.ts): a row's buttons grow to fill it, so the
+ * shorter last row spans the full width and the last value ends under its end label. The
+ * 1px keeps rounding from pushing the last button of a row onto the next.
+ */
+.container {
+  container-type: inline-size;
+}
+
+.buttons {
+  --per-row: var(--cols);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+}
+
+/* Room for even ten buttons of 3rem (10 x 3rem + 9 gaps of 0.75rem): a single row. */
+@container (min-width: 37rem) {
+  .buttons {
+    --per-row: var(--count);
+  }
+}
+
+.button {
+  flex: 1 1 calc((100% - (var(--per-row) - 1) * var(--gap)) / var(--per-row) - 1px);
+  min-width: 0;
+  min-height: 4.5rem;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.button:disabled {
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.labels span:last-child {
+  text-align: right;
+}

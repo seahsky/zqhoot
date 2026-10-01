@@ -1,0 +1,57 @@
+/*
+ * The bar lives outside the stage, fixed to the bottom of the window. On a 16:9 screen it sits
+ * in the stage's 5% bottom margin; on anything taller it sits in the letterbox. Its sizes use
+ * the stage unit worked out from the viewport (the stage is min(100vw, 177.8vh) wide).
+ */
+.bar {
+  --bu: min(1vh, 0.5625vw);
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  /* The buttons have px floors (below), so the gap has one too: on a small window the bu is tiny. */
+  gap: max(6px, calc(var(--bu) * 0.8));
+  padding: max(4px, calc(var(--bu) * 0.6)) max(8px, calc(var(--bu) * 1.2));
+  font-family: var(--font-ui);
+  transition: opacity 200ms linear;
+}
+
+.bar[data-hidden='true']:not(:hover):not(:focus-within) {
+  opacity: 0;
+}
+
+.button {
+  min-width: 24px;
+  min-height: max(28px, calc(var(--bu) * 3.4));
+  padding: 0 calc(var(--bu) * 1.6);
+  border: max(2px, calc(var(--bu) * 0.3)) solid var(--ink);
+  border-radius: calc(var(--bu) * 1);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: max(13px, calc(var(--bu) * 2.1));
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button[aria-pressed='true'] {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 max(2px, calc(var(--bu) * 0.3)) var(--ink);
+}
+
+.primary {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+@media (forced-colors: active) {
+  .button[aria-pressed='true'] {
+    border-width: 5px;
+  }
+}

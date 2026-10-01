@@ -1,0 +1,35 @@
+{
+  "name": "@zqhoot/server-lambda",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "build": "node scripts/build.mjs",
+    "emulate": "node scripts/build.mjs && node --enable-source-maps dist/emulator/main.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "3.1142.0",
+    "@aws-sdk/client-dynamodb": "3.1142.0",
+    "@aws-sdk/client-lambda": "3.1142.0",
+    "@aws-sdk/client-s3": "3.1142.0",
+    "@aws-sdk/lib-dynamodb": "3.1142.0",
+    "@aws-sdk/s3-presigned-post": "3.1142.0",
+    "@zqhoot/engine": "workspace:*",
+    "@zqhoot/protocol": "workspace:*",
+    "@zqhoot/service": "workspace:*",
+    "@zqhoot/store": "workspace:*",
+    "aws-jwt-verify": "5.2.1",
+    "hono": "4.13.10",
+    "nanoid": "6.0.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.164",
+    "@types/ws": "8.18.1",
+    "esbuild": "0.28.2",
+    "fflate": "0.8.3",
+    "ws": "8.22.0"
+  }
+}

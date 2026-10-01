@@ -1,0 +1,75 @@
+.countdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+/* No reserved width: "6 seconds left" reads as tightly as "14 seconds left", and the unit
+   moves once, when the count drops from 10 to 9. */
+.numeral {
+  font-size: var(--fs-countdown);
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.untimed {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+/*
+ * The outline is a ring painted over the fill instead of a border around it. A border and a
+ * rounded fill inside it are two separately anti-aliased curves in the same place, and the
+ * track colour shows through between them as a crescent. With the ring on top, the fill runs
+ * under it and the ring's inner edge is the only edge.
+ */
+.bar {
+  position: relative;
+  height: 1rem;
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: var(--outline-w) solid var(--ink);
+  border-radius: inherit;
+}
+
+.fill {
+  height: 100%;
+  border-radius: 0 999px 999px 0;
+  background: var(--ink);
+  transition: width 220ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    display: none;
+  }
+}
+
+/* Forced colours drop background-color, which would empty the bar; keep it as a system colour. */
+@media (forced-colors: active) {
+  .fill {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}

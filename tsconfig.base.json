@@ -15,6 +15,7 @@
     "exactOptionalPropertyTypes": false,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": []
+    "types": [],
+    "allowImportingTsExtensions": true
   }
 }

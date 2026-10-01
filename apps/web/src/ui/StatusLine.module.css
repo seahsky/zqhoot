@@ -1,0 +1,35 @@
+/*
+ * A status is text with a leading dot, never a bordered pill: an outline and rounded corners
+ * are what buttons look like here (ADR-0016), and a status is not something to press. The dot
+ * is a border, so forced-colours mode keeps it.
+ */
+.status {
+  font-weight: 700;
+  font-size: var(--fs-small);
+  color: var(--ink);
+}
+
+.status:not(:empty) {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status:not(:empty)::before {
+  content: '';
+  flex: none;
+  width: 0;
+  height: 0;
+  border: 0.3em solid currentColor;
+  border-radius: 50%;
+}
+
+.silent {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -1,0 +1,93 @@
+/*
+ * Design tokens (ADR-0016). Chrome is ink on white; colour appears only inside outlined
+ * answer glyphs and charts. Surface vs background is ~1.1:1, so cards always carry the ink outline.
+ */
+:root {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --surface: #f1f4f9;
+  --ink: #0b1020;
+  --ink-2: #3a4258;
+
+  --ans-a: #0072b2;
+  --ans-b: #d55e00;
+  --ans-c: #f0e442;
+  --ans-d: #009e73;
+  --ans-e: #56b4e9;
+  --ans-f: #cc79a7;
+
+  --outline-w: 3px;
+  --focus-w: 4px;
+  --focus-offset: 3px;
+  --radius: 14px;
+  --gap: 12px;
+  --gutter: 16px;
+
+  --font-ui:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
+
+  /* Phone type scale (rem, so browser text-size settings apply). */
+  --fs-question: clamp(1.25rem, 1.05rem + 1vw, 1.75rem);
+  --fs-answer: 1.125rem;
+  --fs-badge: 1.5rem;
+  --fs-countdown: 2rem;
+  --fs-title: clamp(1.75rem, 1.4rem + 1.6vw, 2.25rem);
+  --fs-body: 1.0625rem;
+  --fs-small: 0.875rem;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0b1020;
+  --surface: #141b30;
+  --ink: #f4f6fb;
+  --ink-2: #c3cad9;
+}
+
+/* Follow the phone's setting unless a page pins a theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0b1020;
+    --surface: #141b30;
+    --ink: #f4f6fb;
+    --ink-2: #c3cad9;
+  }
+}
+
+/* More contrast: secondary text becomes ink, tints go away, outlines thicken. */
+@media (prefers-contrast: more) {
+  :root,
+  :root[data-theme],
+  :root:not([data-theme='light']) {
+    --ink-2: var(--ink);
+    --surface: var(--bg);
+    --outline-w: 4px;
+  }
+}
+
+/* Root size steps for large displays (rem-based layouts scale; no bare vw text). */
+html {
+  font-size: 100%;
+}
+@media (min-width: 2560px) {
+  html {
+    font-size: 133%;
+  }
+}
+@media (min-width: 3200px) {
+  html {
+    font-size: 167%;
+  }
+}
+@media (min-width: 3840px) {
+  html {
+    font-size: 200%;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
